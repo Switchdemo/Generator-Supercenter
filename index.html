@@ -4605,6 +4605,8 @@ async function onSignedIn(session) {
   await loadDevicesFromDB();
   buildControls();
   buildDataCards();
+  // Pre-load latest device data so Current Device Status is populated on first visit
+  loadLatest();
 }
 
 function showLoginOverlay() {
