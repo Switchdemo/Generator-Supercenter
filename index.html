@@ -1314,9 +1314,7 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
-let DEVICES = [
-  { id: "device0", uid: "dev:860322060777460", name: "Generator Superstore Unit 7460" },
-];
+let DEVICES = [];
 
 async function loadDevicesFromDB() {
   try {
@@ -1418,7 +1416,8 @@ async function addNewDevice() {
     const res = await supabasePost("devices", {
       device_id: devId, uid, name, enabled: true, sensing_capable: false
     });
-    if (res.ok) {
+    // supabasePost already reads body on error — check status code only
+    if (res.ok || res.status === 201) {
       if (status) { status.textContent = `✅ ${name} added successfully.`; status.style.color = "var(--green-dark)"; }
       ["new-device-uid","new-device-name","new-device-id"].forEach(id => {
         const el = document.getElementById(id); if (el) el.value = "";
@@ -1428,8 +1427,7 @@ async function addNewDevice() {
       buildDataCards();
       loadDeviceMgmt();
     } else {
-      const err = await res.text();
-      if (status) { status.textContent = `Error: ${err}`; status.style.color = "var(--red)"; }
+      if (status) { status.textContent = `Error saving device (HTTP ${res.status}). Check the console for details.`; status.style.color = "var(--red)"; }
     }
   } catch(e) {
     if (status) { status.textContent = `Error: ${e.message}`; status.style.color = "var(--red)"; }
@@ -1469,33 +1467,35 @@ let groupAssignments = {}; // { device_uid: [group_numbers] }
 // ── Supabase ──────────────────────────────────────────────────────────────────
 async function supabaseGet(query) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${query}`, {
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` }
   });
   return res.json();
 }
 async function supabasePost(table, data) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify(data)
   });
   if (!res.ok) {
-    const err = await res.text();
-    console.error(`Supabase POST error (${table}):`, err, "Data:", JSON.stringify(data));
+    // Clone before reading so callers can still read the response if needed
+    res.clone().text().then(err =>
+      console.error(`Supabase POST error (${table}):`, err, "Data:", JSON.stringify(data))
+    );
   }
   return res;
 }
 async function supabaseUpsert(table, data, onConflict) {
   return fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
     method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(data)
   });
 }
 async function supabaseDelete(table, filter) {
   return fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     method: "DELETE",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` }
   });
 }
 
@@ -1504,7 +1504,7 @@ async function supabasePatch(path, data) {
     method: "PATCH",
     headers: {
       "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": "return=minimal"
     },
@@ -2138,7 +2138,7 @@ async function queueNow(scheduleId) {
   // Update last_fired_at on schedule
   await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${scheduleId}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ last_fired_at: fireAt })
   });
 
@@ -2149,7 +2149,7 @@ async function queueNow(scheduleId) {
 async function toggleSchedule(id, currentEnabled) {
   await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ enabled: !currentEnabled })
   });
   await loadSchedules();
@@ -2159,7 +2159,7 @@ async function deleteSchedule(id) {
   // Cancel any pending queue items for this schedule
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?schedule_id=eq.${id}&status=eq.pending`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   await supabaseDelete("schedules", `id=eq.${id}`);
@@ -2253,7 +2253,7 @@ async function fireNow(id) {
   // Mark as fired
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "sent", fired_at: new Date().toISOString() })
   });
   await loadQueue();
@@ -2262,7 +2262,7 @@ async function fireNow(id) {
 async function cancelQueueItem(id) {
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   setStatus("ready", "Queue item cancelled.");
@@ -2330,7 +2330,7 @@ async function checkSchedules() {
     // Update last_fired_at on schedule
     await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${s.id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ last_fired_at: fireAt })
     });
 
@@ -2348,7 +2348,7 @@ async function fireReadyQueueItems() {
     // Mark fired BEFORE executing to prevent double-fire
     await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${item.id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ status: "sent", fired_at: now.toISOString() })
     });
     await executeQueuedCommand(item);
@@ -3024,7 +3024,7 @@ async function cancelAllEvents() {
   // Mark all fired/pending queue items as cancelled in Supabase
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?status=in.(pending,fired)`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   setStatus("ready", `Restore sent to all ${DEVICES.length} devices — all events cancelled.`);
