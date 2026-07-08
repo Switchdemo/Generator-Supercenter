@@ -327,7 +327,7 @@
 <div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;">
   <div style="width:100%;max-width:420px;padding:1rem;">
     <div style="text-align:center;margin-bottom:2rem;">
-      <div style="font-size:22px;font-weight:700;color:var(--text-primary);">Load Control Device Panel</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text-primary);">Generator Superstore — Device Portal</div>
       <div style="font-size:13px;color:var(--text-hint);margin-top:4px;">Sign in to continue</div>
     </div>
     <div class="sched-card" style="padding:1.5rem;">
@@ -438,8 +438,8 @@
 
 <div class="sticky-header">
   <div class="page-header">
-    <div class="page-title">Green Mountain Power — Load Control Panel</div>
-    <div class="page-sub">GMP Load Control &amp; Demand Response</div>
+    <div class="page-title">Generator Superstore — Device Management</div>
+    <div class="page-sub">GS Fleet Enrollment &amp; Control</div>
   </div>
   <!-- 7-day weather strip -->
   <div id="header-wx-strip" style="display:none;">
@@ -1547,17 +1547,13 @@
 </div>
 
 <script>
-const PROXY_URL    = "https://gmp-relay.hurd71185.workers.dev/";
+const PROXY_URL    = "https://gs-relay.hurd71185.workers.dev/";
 const SUPABASE_URL = "https://jariiblgefswzwuimhqr.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphcmlpYmxnZWZzd3p3dWltaHFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NzEzNzMsImV4cCI6MjA5NjI0NzM3M30.nQ_p3jBp1YfAsC7rqIhn7PYq8yH1mmV8scD5IuvvTeA";
 
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
-const DEVICES = [
-  { id: "device0", uid: "dev:868032061450817" },
-  { id: "device1", uid: "dev:868032061489682" },
-  { id: "device2", uid: "dev:868032061596023" },
-].map(d => ({ ...d, name: unitName(d.uid) }));
+let DEVICES = [];  // Populated from Supabase devices table on login
 
 const COMMANDS = {
   "1_on":   {"body":{"LC":"A10B000001810001000000002B"},"req":"note.add","sync":true},
@@ -1573,7 +1569,7 @@ const COMMANDS = {
 };
 
 const relayState = {};
-DEVICES.forEach(d => { relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false }; });
+// relayState populated dynamically in loadDevicesFromDB after login
 let busy = false;
 let map, mapInitialized = false;
 const mapMarkers = {};
@@ -4715,9 +4711,35 @@ async function onSignedIn(session) {
     .update({ last_login: new Date().toISOString() })
     .eq("id", currentUser.id);
 
+  // Load devices from Supabase into DEVICES array
+  await loadDevicesFromDB();
+
+  // Build device UI
+  buildControls();
+  buildDataCards();
+
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
+}
+
+async function loadDevicesFromDB() {
+  try {
+    const rows = await supabaseGet("devices?enabled=eq.true&order=enrolled_at.asc");
+    if (!Array.isArray(rows)) return;
+    DEVICES = rows.map((d, i) => ({
+      id:   `device${i}`,
+      uid:  d.uid,
+      name: d.name || unitName(d.uid)
+    }));
+    // Reset relay state for loaded devices
+    DEVICES.forEach(d => {
+      relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false };
+    });
+    console.log(`[GS] Loaded ${DEVICES.length} device(s) from Supabase`);
+  } catch(e) {
+    console.error("[GS] loadDevicesFromDB failed:", e.message);
+  }
 }
 
 function showLoginOverlay() {
