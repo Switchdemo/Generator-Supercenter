@@ -4725,8 +4725,12 @@ async function onSignedIn(session) {
 
 async function loadDevicesFromDB() {
   try {
-    const rows = await supabaseGet("devices?enabled=eq.true&order=enrolled_at.asc");
-    if (!Array.isArray(rows)) return;
+    const rows = await supabaseGet("devices?enabled=eq.true&order=created_at.asc");
+    console.log("[GS] devices query returned:", rows);
+    if (!Array.isArray(rows) || !rows.length) {
+      console.warn("[GS] No devices found in Supabase");
+      return;
+    }
     DEVICES = rows.map((d, i) => ({
       id:   `device${i}`,
       uid:  d.uid,
@@ -4736,7 +4740,7 @@ async function loadDevicesFromDB() {
     DEVICES.forEach(d => {
       relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false };
     });
-    console.log(`[GS] Loaded ${DEVICES.length} device(s) from Supabase`);
+    console.log(`[GS] Loaded ${DEVICES.length} device(s):`, DEVICES.map(d => d.uid));
   } catch(e) {
     console.error("[GS] loadDevicesFromDB failed:", e.message);
   }
