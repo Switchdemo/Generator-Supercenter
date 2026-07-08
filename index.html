@@ -1210,21 +1210,31 @@
           <div style="font-size:12px;color:var(--text-hint);margin-top:4px;">Point camera at the QR label on the device, or enter the ID manually below</div>
         </div>
 
-        <!-- Camera viewfinder -->
+        <!-- iOS-native camera capture (most reliable on iPhone) -->
+        <input type="file" id="enroll-file-input" accept="image/*" capture="environment"
+          style="display:none;" onchange="enrollScanFromFile(this)" />
+
+        <button id="enroll-camera-btn" onclick="enrollStartCamera()"
+          style="width:100%;padding:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:8px;">
+          📷 Scan QR Code
+        </button>
+        <div style="text-align:center;margin-bottom:6px;">
+          <button onclick="document.getElementById('enroll-file-input').click()"
+            style="background:none;border:none;font-size:12px;color:var(--text-hint);cursor:pointer;text-decoration:underline;">
+            📁 Take photo or upload image instead
+          </button>
+        </div>
+        <!-- Live viewfinder fallback (desktop / Android) -->
         <div id="enroll-camera-wrap" style="position:relative;width:100%;background:#000;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px;display:none;">
           <video id="enroll-video" autoplay playsinline muted style="width:100%;display:block;max-height:280px;object-fit:cover;"></video>
           <canvas id="enroll-canvas" style="display:none;"></canvas>
-          <!-- Aim guide -->
           <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
             <div style="width:180px;height:180px;border:2px solid rgba(255,255,255,0.7);border-radius:8px;box-shadow:0 0 0 2000px rgba(0,0,0,0.35);"></div>
           </div>
           <div id="enroll-scan-status" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:12px;color:rgba(255,255,255,0.8);">Scanning…</div>
+          <button onclick="enrollStopCamera()"
+            style="position:absolute;top:8px;right:8px;padding:4px 10px;border-radius:var(--radius-sm);border:none;background:rgba(0,0,0,0.5);color:white;font-size:12px;cursor:pointer;">✕ Close</button>
         </div>
-
-        <button id="enroll-camera-btn" onclick="enrollStartCamera()"
-          style="width:100%;padding:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;">
-          📷 Open Camera
-        </button>
 
         <!-- Manual entry -->
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
@@ -5139,33 +5149,54 @@ let enrollStream = null;
 let enrollScanInterval = null;
 
 async function enrollStartCamera() {
-  const wrap   = document.getElementById("enroll-camera-wrap");
-  const video  = document.getElementById("enroll-video");
-  const camBtn = document.getElementById("enroll-camera-btn");
   const errEl  = document.getElementById("enroll-step1-error");
+  const camBtn = document.getElementById("enroll-camera-btn");
   hideEl(errEl);
 
-  // Load jsQR dynamically (CDN, no install)
+  // Detect iOS — use native file capture which opens camera directly
+  // Android Chrome supports getUserMedia fine so goes to live viewfinder
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  const isAndroid = /Android/.test(navigator.userAgent);
+
+  if (isIOS) {
+    // iOS: trigger hidden file input — opens native camera app
+    document.getElementById("enroll-file-input").click();
+    return;
+  }
+
+  // Non-iOS: try live viewfinder with jsQR
   if (!window.jsQR) {
     camBtn.textContent = "Loading scanner…";
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    }).catch(() => { showEl(errEl, "Could not load QR scanner. Please enter the ID manually."); camBtn.textContent="📷 Open Camera"; return; });
+    camBtn.disabled = true;
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    } catch(e) {
+      // jsQR failed to load — fall back to file input
+      camBtn.textContent = "📷 Scan QR Code";
+      camBtn.disabled = false;
+      document.getElementById("enroll-file-input").click();
+      return;
+    }
+    camBtn.disabled = false;
   }
 
   try {
-    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    enrollStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    const video  = document.getElementById("enroll-video");
+    const wrap   = document.getElementById("enroll-camera-wrap");
     video.srcObject = enrollStream;
     wrap.style.display = "block";
-    camBtn.textContent = "📷 Camera Active — point at QR code";
-    camBtn.onclick = enrollStopCamera;
+    camBtn.textContent = "📷 Scanning — point at QR code";
 
     const canvas = document.getElementById("enroll-canvas");
     const ctx    = canvas.getContext("2d");
-    const status = document.getElementById("enroll-scan-status");
 
     enrollScanInterval = setInterval(() => {
       if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
@@ -5176,15 +5207,71 @@ async function enrollStartCamera() {
       const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
       if (code?.data) {
         enrollStopCamera();
-        if (status) status.textContent = "✅ QR detected!";
         enrollConfirmUID(code.data);
       }
     }, 250);
 
   } catch(e) {
-    showEl(errEl, "Camera access denied. Please enter the ID manually below.");
-    camBtn.textContent = "📷 Open Camera";
+    // Camera access denied or unavailable — fall back to file input
+    showEl(errEl, "Camera access denied — opening file picker instead.");
+    camBtn.textContent = "📷 Scan QR Code";
+    document.getElementById("enroll-file-input").click();
   }
+}
+
+// Handle image selected from file input (iOS native camera or gallery)
+async function enrollScanFromFile(input) {
+  const errEl = document.getElementById("enroll-step1-error");
+  const camBtn = document.getElementById("enroll-camera-btn");
+  hideEl(errEl);
+
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+
+  camBtn.textContent = "Reading QR code…";
+  camBtn.disabled = true;
+
+  // Load jsQR if not already loaded
+  if (!window.jsQR) {
+    try {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
+        s.onload = resolve; s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    } catch(e) {
+      showEl(errEl, "Could not load QR scanner. Please enter the ID manually below.");
+      camBtn.textContent = "📷 Scan QR Code";
+      camBtn.disabled = false;
+      input.value = "";
+      return;
+    }
+  }
+
+  try {
+    // Draw image to canvas and scan
+    const img = await createImageBitmap(file);
+    const canvas = document.getElementById("enroll-canvas");
+    canvas.width  = img.width;
+    canvas.height = img.height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0);
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const code = window.jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "attemptBoth" });
+
+    if (code?.data) {
+      enrollConfirmUID(code.data);
+    } else {
+      showEl(errEl, "Could not read QR code from image. Try again in better lighting, or enter the ID manually.");
+    }
+  } catch(e) {
+    showEl(errEl, "Error reading image. Please enter the ID manually below.");
+  }
+
+  camBtn.textContent = "📷 Scan QR Code";
+  camBtn.disabled = false;
+  input.value = ""; // reset so same file can be selected again
 }
 
 function enrollStopCamera() {
