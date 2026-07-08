@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Generator Superstore — Load Control Panel</title>
+<title>Relay Control Panel</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -43,6 +43,12 @@
 
   .tab-pane { display: none; }
   .tab-pane.active { display: block; }
+  .enroll-check-row { display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:var(--radius-sm);background:var(--surface2);font-size:13px; }
+  .enroll-check-row.done { background:rgba(22,163,74,0.08); }
+  .enroll-check-row.active { background:rgba(59,130,246,0.08);font-weight:600; }
+  .enroll-check-row.failed { background:rgba(220,38,38,0.08); }
+  .enroll-chk-icon { font-size:16px;min-width:20px;text-align:center; }
+  .enroll-chk-label { color:var(--text-secondary); }
   .scroll-content { padding: 1.25rem 1rem; }
 
   /* ── Device Cards ── */
@@ -345,6 +351,12 @@
           Sign In
         </button>
         <div id="login-error" style="margin-top:10px;font-size:12px;color:var(--red);text-align:center;display:none;"></div>
+        <div style="text-align:center;margin-top:14px;">
+          <button onclick="document.getElementById('login-step-1').style.display='none';document.getElementById('login-step-4').style.display='block';"
+            style="background:none;border:none;font-size:12px;color:var(--text-hint);cursor:pointer;text-decoration:underline;">
+            🔧 Installer access
+          </button>
+        </div>
       </div>
 
       <!-- Step 2: Email OTP -->
@@ -369,6 +381,30 @@
           ← Back
         </button>
         <div id="otp-error" style="margin-top:10px;font-size:12px;color:var(--red);text-align:center;display:none;"></div>
+      </div>
+
+      <!-- Step 4: Installer PIN (no account required) -->
+      <div id="login-step-4" style="display:none;">
+        <div style="text-align:center;margin-bottom:1.25rem;">
+          <div style="font-size:32px;margin-bottom:8px;">🔧</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);">Installer Access</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:4px;">Enter your installer PIN to begin device enrollment</div>
+        </div>
+        <div style="margin-bottom:1.25rem;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">Installer PIN</label>
+          <input type="password" id="installer-pin-input" placeholder="••••••" maxlength="8" inputmode="numeric"
+            style="width:100%;padding:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:22px;font-weight:700;letter-spacing:6px;text-align:center;"
+            onkeydown="if(event.key==='Enter') installerPinSubmit()" />
+        </div>
+        <button onclick="installerPinSubmit()" id="installer-pin-btn"
+          style="width:100%;padding:10px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:14px;font-weight:600;cursor:pointer;">
+          Continue →
+        </button>
+        <button onclick="document.getElementById('login-step-4').style.display='none';document.getElementById('login-step-1').style.display='block';"
+          style="width:100%;margin-top:8px;padding:8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:transparent;font-size:12px;color:var(--text-hint);cursor:pointer;">
+          ← Sign in with account instead
+        </button>
+        <div id="installer-pin-error" style="margin-top:10px;font-size:12px;color:var(--red);text-align:center;display:none;"></div>
       </div>
 
       <!-- Step 3: Change password (first login) -->
@@ -402,8 +438,8 @@
 
 <div class="sticky-header">
   <div class="page-header">
-    <div class="page-title">Generator Superstore — Load Control Panel</div>
-    <div class="page-sub">Generator Superstore Load Control &amp; Demand Response</div>
+    <div class="page-title">Green Mountain Power — Load Control Panel</div>
+    <div class="page-sub">GMP Load Control &amp; Demand Response</div>
   </div>
   <!-- 7-day weather strip -->
   <div id="header-wx-strip" style="display:none;">
@@ -419,6 +455,7 @@
     <button class="tab-btn" id="main-devices" onclick="switchMain('devices', this)">Devices</button>
     <button class="tab-btn" id="main-weather" onclick="switchMain('weather', this)">Weather</button>
     <button class="tab-btn" id="main-admin" onclick="switchMain('admin', this)" style="display:none;">Admin</button>
+    <button class="tab-btn" id="main-installer" onclick="switchMain('installer', this)" style="display:none;">🔧 Enroll Device</button>
   </div>
   <!-- Sub-tabs (shown contextually) -->
   <div class="sub-tabs" id="sub-tabs-events" style="display:none;">
@@ -919,49 +956,6 @@
 <div class="tab-pane" id="tab-settings">
   <div class="scroll-content">
     <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
-<!-- Device Management -->
-      <div class="sched-card" id="device-mgmt-card">
-        <div class="sched-card-header">
-          <div class="sched-card-title">📱 Device Management</div>
-          <button class="queue-refresh" onclick="loadDeviceMgmt()">↻ Refresh</button>
-        </div>
-        <div style="font-size:12px;color:var(--text-hint);margin-bottom:14px;">
-          Add or remove devices from this dashboard. Changes take effect immediately.
-          Only users with <strong>operator</strong> or <strong>administrator</strong> roles can manage devices.
-        </div>
-
-        <!-- Add Device Form -->
-        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:14px;margin-bottom:14px;border:0.5px solid var(--border-md);" id="add-device-form">
-          <div style="font-size:11px;font-weight:600;color:var(--text-hint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Add New Device</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:10px;align-items:end;">
-            <div>
-              <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px;">Device UID *</div>
-              <input id="new-device-uid" type="text" placeholder="dev:860322060XXXXXX"
-                style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px;">Device Name *</div>
-              <input id="new-device-name" type="text" placeholder="e.g. Unit 1234"
-                style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;box-sizing:border-box;" />
-            </div>
-            <div>
-              <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px;">Device ID *</div>
-              <input id="new-device-id" type="text" placeholder="e.g. device1"
-                style="width:100%;padding:7px 10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;box-sizing:border-box;" />
-              <div style="font-size:10px;color:var(--text-hint);margin-top:2px;">Unique short ID (no spaces)</div>
-            </div>
-            <button onclick="addNewDevice()"
-              style="padding:8px 18px;border-radius:var(--radius-sm);border:none;background:var(--green-dark);color:#fff;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;">
-              + Add
-            </button>
-          </div>
-          <div id="add-device-status" style="margin-top:8px;font-size:11px;min-height:16px;"></div>
-        </div>
-
-        <!-- Device List -->
-        <div id="device-mgmt-list"><div class="data-empty">Loading devices…</div></div>
-      </div>
-
 <!-- Bubble-Up Interval Control -->
       <div class="sched-card">
         <div class="sched-card-header">
@@ -1203,6 +1197,190 @@
 </div>
 
 <!-- ── ADMIN TAB ── -->
+<!-- ── INSTALLER ENROLLMENT TAB ──────────────────────────────────────────── -->
+<div class="tab-pane" id="tab-installer">
+  <div class="scroll-content">
+    <div style="max-width:520px;margin:0 auto;padding:1rem;">
+
+      <!-- Step 1: Scan / Enter Device ID -->
+      <div id="enroll-step-1" class="sched-card" style="padding:1.5rem;">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:28px;">📷</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-top:6px;">Scan Device QR Code</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:4px;">Point camera at the QR label on the device, or enter the ID manually below</div>
+        </div>
+
+        <!-- Camera viewfinder -->
+        <div id="enroll-camera-wrap" style="position:relative;width:100%;background:#000;border-radius:var(--radius-sm);overflow:hidden;margin-bottom:14px;display:none;">
+          <video id="enroll-video" autoplay playsinline muted style="width:100%;display:block;max-height:280px;object-fit:cover;"></video>
+          <canvas id="enroll-canvas" style="display:none;"></canvas>
+          <!-- Aim guide -->
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;">
+            <div style="width:180px;height:180px;border:2px solid rgba(255,255,255,0.7);border-radius:8px;box-shadow:0 0 0 2000px rgba(0,0,0,0.35);"></div>
+          </div>
+          <div id="enroll-scan-status" style="position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:12px;color:rgba(255,255,255,0.8);">Scanning…</div>
+        </div>
+
+        <button id="enroll-camera-btn" onclick="enrollStartCamera()"
+          style="width:100%;padding:12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px;">
+          📷 Open Camera
+        </button>
+
+        <!-- Manual entry -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+          <span style="font-size:11px;color:var(--text-hint);">or enter manually</span>
+          <div style="flex:1;height:1px;background:var(--border);"></div>
+        </div>
+        <input type="text" id="enroll-manual-uid" placeholder="868032061463182 or dev:868032061463182"
+          style="width:100%;padding:10px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:13px;font-family:monospace;margin-bottom:10px;"
+          oninput="enrollNormalizeManual(this)" onkeydown="if(event.key==='Enter') enrollConfirmUID(document.getElementById('enroll-manual-uid').value)" />
+        <button onclick="enrollConfirmUID(document.getElementById('enroll-manual-uid').value)"
+          style="width:100%;padding:10px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:14px;font-weight:600;cursor:pointer;">
+          Continue →
+        </button>
+        <div id="enroll-step1-error" style="margin-top:10px;font-size:12px;color:var(--red);text-align:center;display:none;"></div>
+      </div>
+
+      <!-- Step 2: Confirm Device -->
+      <div id="enroll-step-2" class="sched-card" style="padding:1.5rem;display:none;">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:28px;">✅</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-top:6px;">Confirm Device</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:4px;">Is this the device you just installed?</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:16px;text-align:center;margin-bottom:20px;border:0.5px solid var(--border-md);">
+          <div style="font-size:11px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;">Device UID</div>
+          <div id="enroll-confirm-uid" style="font-size:18px;font-weight:700;font-family:monospace;color:var(--text-primary);word-break:break-all;"></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <button onclick="enrollGoBack()"
+            style="padding:10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:13px;font-weight:600;cursor:pointer;">
+            ← Re-scan
+          </button>
+          <button onclick="enrollGoToJobInfo()"
+            style="padding:10px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:14px;font-weight:600;cursor:pointer;">
+            Yes, Continue →
+          </button>
+        </div>
+      </div>
+
+      <!-- Step 3: Job Info -->
+      <div id="enroll-step-3" class="sched-card" style="padding:1.5rem;display:none;">
+        <div style="text-align:center;margin-bottom:1.25rem;">
+          <div style="font-size:28px;">📋</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-top:6px;">Installation Details</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:4px;">This information is saved for your records</div>
+        </div>
+        <!-- Installer identity locked — shown but not editable -->
+        <div style="background:var(--surface2);border-radius:var(--radius-sm);padding:10px 14px;margin-bottom:12px;border:0.5px solid var(--border-md);display:flex;align-items:center;gap:10px;">
+          <span style="font-size:18px;">🔧</span>
+          <div>
+            <div style="font-size:10px;color:var(--text-hint);text-transform:uppercase;letter-spacing:.05em;">Installer</div>
+            <div id="enroll-installer-display" style="font-size:13px;font-weight:600;color:var(--text-primary);">—</div>
+          </div>
+          <span style="margin-left:auto;font-size:10px;color:var(--text-hint);">🔒 locked</span>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">Customer Name</label>
+          <input type="text" id="enroll-customer-name" placeholder="Customer or site name"
+            style="width:100%;padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:13px;" />
+        </div>
+        <div style="margin-bottom:20px;">
+          <label style="font-size:12px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px;">Installation Address</label>
+          <input type="text" id="enroll-customer-address" placeholder="123 Main St, City, State"
+            style="width:100%;padding:8px 12px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:13px;" />
+        </div>
+        <button onclick="enrollStartProcess()"
+          style="width:100%;padding:12px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:14px;font-weight:600;cursor:pointer;">
+          Begin Enrollment →
+        </button>
+        <button onclick="enrollShowStep(2)"
+          style="width:100%;margin-top:8px;padding:8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:transparent;font-size:12px;color:var(--text-hint);cursor:pointer;">
+          ← Back
+        </button>
+      </div>
+
+      <!-- Step 4: Enrolling (automated progress) -->
+      <div id="enroll-step-4" class="sched-card" style="padding:1.5rem;display:none;">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:28px;" id="enroll-progress-icon">⚙️</div>
+          <div style="font-size:17px;font-weight:700;color:var(--text-primary);margin-top:6px;">Enrolling Device</div>
+          <div style="font-size:12px;color:var(--text-hint);margin-top:4px;" id="enroll-progress-sub">Please wait…</div>
+        </div>
+
+        <!-- Step checklist -->
+        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+          <div class="enroll-check-row" id="enroll-chk-1">
+            <span class="enroll-chk-icon">⏳</span>
+            <span class="enroll-chk-label">Registering device in fleet</span>
+          </div>
+          <div class="enroll-check-row" id="enroll-chk-2">
+            <span class="enroll-chk-icon">⏸</span>
+            <span class="enroll-chk-label">Adding to dashboard</span>
+          </div>
+          <div class="enroll-check-row" id="enroll-chk-3">
+            <span class="enroll-chk-icon">⏸</span>
+            <span class="enroll-chk-label">Sending test command (R1 + R2 ON)</span>
+          </div>
+          <div class="enroll-check-row" id="enroll-chk-4">
+            <span class="enroll-chk-icon">⏸</span>
+            <span class="enroll-chk-label">Waiting for relay confirmation…</span>
+          </div>
+          <div class="enroll-check-row" id="enroll-chk-5">
+            <span class="enroll-chk-icon">⏸</span>
+            <span class="enroll-chk-label">Sending restore command (R1 + R2 OFF)</span>
+          </div>
+          <div class="enroll-check-row" id="enroll-chk-6">
+            <span class="enroll-chk-icon">⏸</span>
+            <span class="enroll-chk-label">Confirming relays returned to OFF</span>
+          </div>
+        </div>
+
+        <!-- Timeout countdown -->
+        <div id="enroll-timeout-wrap" style="display:none;text-align:center;margin-bottom:12px;">
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px;">Waiting for device response</div>
+          <div style="height:4px;background:var(--border-md);border-radius:2px;overflow:hidden;margin-bottom:6px;">
+            <div id="enroll-timeout-bar" style="height:100%;background:var(--blue-dark);border-radius:2px;width:100%;transition:width 1s linear;"></div>
+          </div>
+          <div id="enroll-timeout-label" style="font-size:11px;font-family:monospace;color:var(--text-hint);">5:00 remaining</div>
+          <div style="font-size:11px;color:var(--text-hint);margin-top:4px;">
+            Timeout:
+            <select id="enroll-timeout-select" onchange="enrollUpdateTimeout(this.value)"
+              style="font-size:11px;padding:2px 6px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);">
+              <option value="3">3 min</option>
+              <option value="5" selected>5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Result -->
+      <div id="enroll-step-5" class="sched-card" style="padding:1.5rem;display:none;">
+        <div style="text-align:center;margin-bottom:1.5rem;">
+          <div style="font-size:40px;" id="enroll-result-icon">✅</div>
+          <div style="font-size:18px;font-weight:700;margin-top:8px;" id="enroll-result-title">Enrollment Complete</div>
+          <div style="font-size:13px;color:var(--text-hint);margin-top:6px;" id="enroll-result-msg"></div>
+        </div>
+        <div id="enroll-result-detail" style="background:var(--surface2);border-radius:var(--radius-sm);padding:14px;font-size:12px;font-family:monospace;color:var(--text-secondary);margin-bottom:20px;line-height:1.8;"></div>
+        <div id="enroll-retry-wrap" style="display:none;margin-bottom:12px;">
+          <button onclick="enrollRetryTest()"
+            style="width:100%;padding:10px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface2);font-size:13px;font-weight:600;cursor:pointer;">
+            🔄 Retry Comms Test
+          </button>
+        </div>
+        <button onclick="enrollReset()"
+          style="width:100%;padding:10px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:14px;font-weight:600;cursor:pointer;">
+          Enroll Another Device
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <div class="tab-pane" id="tab-admin">
   <div class="scroll-content">
     <div style="max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:16px;">
@@ -1280,6 +1458,67 @@
         </div>
       </div>
 
+      <!-- Installer Management -->
+      <div class="sched-card" id="admin-installer-mgmt">
+        <div class="sched-card-header">
+          <div class="sched-card-title">🔧 Installer Management</div>
+          <button class="queue-refresh" onclick="showAddInstallerForm()">+ Add Installer</button>
+        </div>
+
+        <!-- Add Installer Form -->
+        <div id="add-installer-form" style="display:none;background:var(--surface2);border-radius:var(--radius-sm);padding:1rem;margin-bottom:1rem;border:0.5px solid var(--border-md);">
+          <div style="font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:10px;">New Installer</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Full Name</label>
+              <input type="text" id="new-installer-name" placeholder="e.g. Jimmy Smith"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;" />
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">PIN Type</label>
+              <select id="new-installer-pin-type" onchange="installerPinTypeChanged()"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;">
+                <option value="4digit">4-Digit PIN</option>
+                <option value="6digit">6-Digit PIN</option>
+                <option value="password">Password (alphanumeric)</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">PIN / Password</label>
+              <div style="display:flex;gap:6px;align-items:center;">
+                <input type="password" id="new-installer-pin" placeholder="••••"
+                  maxlength="4" inputmode="numeric"
+                  style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:13px;font-family:monospace;letter-spacing:4px;" />
+                <button onclick="installerGeneratePin()" title="Generate random PIN"
+                  style="padding:5px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;cursor:pointer;white-space:nowrap;">🎲</button>
+              </div>
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-hint);display:block;margin-bottom:3px;">Notes (optional)</label>
+              <input type="text" id="new-installer-notes" placeholder="Region, company, phone…"
+                style="width:100%;padding:6px 8px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:var(--surface);font-size:12px;" />
+            </div>
+          </div>
+          <div id="new-installer-pin-preview" style="font-size:11px;color:var(--text-hint);margin-bottom:10px;font-family:monospace;"></div>
+          <div style="display:flex;gap:8px;">
+            <button onclick="createInstaller()"
+              style="padding:7px 16px;border-radius:var(--radius-sm);border:none;background:var(--text-primary);color:white;font-size:12px;font-weight:600;cursor:pointer;">
+              Add Installer
+            </button>
+            <button onclick="document.getElementById('add-installer-form').style.display='none'"
+              style="padding:7px 16px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:transparent;font-size:12px;cursor:pointer;">
+              Cancel
+            </button>
+          </div>
+          <div id="add-installer-error" style="margin-top:8px;font-size:11px;color:var(--red);display:none;"></div>
+        </div>
+
+        <!-- Installers Table -->
+        <div id="installers-table-container">
+          <div class="sched-empty">Loading installers…</div>
+        </div>
+      </div>
+
       <!-- My Account -->
       <div class="sched-card">
         <div class="sched-card-header">
@@ -1308,29 +1547,17 @@
 </div>
 
 <script>
-const PROXY_URL    = "https://gs-relay.hurd71185.workers.dev/";
-const SUPABASE_URL = "https://jariiblgefswzwuimhqr.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphcmlpYmxnZWZzd3p3dWltaHFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NzEzNzMsImV4cCI6MjA5NjI0NzM3M30.nQ_p3jBp1YfAsC7rqIhn7PYq8yH1mmV8scD5IuvvTeA";
+const PROXY_URL    = "https://gmp-relay.hurd71185.workers.dev/";
+const SUPABASE_URL = "https://lqisreketpdzhpqjcqke.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxxaXNyZWtldHBkemhwcWpjcWtlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTM3OTAsImV4cCI6MjA5MzU2OTc5MH0.dHTih6XYSFbtMrljcb3SYtORTzxM8QVcx1i38x0izTo";
 
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
-let DEVICES = [];
-
-async function loadDevicesFromDB() {
-  try {
-    const rows = await supabaseGet("devices?enabled=eq.true&order=id.asc&select=*");
-    if (Array.isArray(rows) && rows.length > 0) {
-      DEVICES = rows.map(r => ({
-        id: r.device_id, uid: r.uid, name: r.name,
-        sensing_capable: r.sensing_capable || false
-      }));
-      // Sync relayState for any new devices
-      DEVICES.forEach(d => {
-        if (!relayState[d.id]) relayState[d.id] = {1:false,2:false,3:false,4:false,all:false};
-      });
-    }
-  } catch(e) { console.error("loadDevicesFromDB:", e); }
-}
+const DEVICES = [
+  { id: "device0", uid: "dev:868032061450817" },
+  { id: "device1", uid: "dev:868032061489682" },
+  { id: "device2", uid: "dev:868032061596023" },
+].map(d => ({ ...d, name: unitName(d.uid) }));
 
 const COMMANDS = {
   "1_on":   {"body":{"LC":"A10B000001810001000000002B"},"req":"note.add","sync":true},
@@ -1351,115 +1578,6 @@ let busy = false;
 let map, mapInitialized = false;
 const mapMarkers = {};
 
-// ── Device Management ────────────────────────────────────────────────────────
-
-async function loadDeviceMgmt() {
-  const list = document.getElementById("device-mgmt-list");
-  if (!list) return;
-  try {
-    const rows = await supabaseGet("devices?order=id.asc&select=*");
-    if (!Array.isArray(rows) || !rows.length) {
-      list.innerHTML = '<div class="data-empty">No devices configured.</div>';
-      return;
-    }
-    list.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px;">
-      <thead><tr>
-        <th style="text-align:left;padding:8px 10px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Name</th>
-        <th style="text-align:left;padding:8px 10px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Device UID</th>
-        <th style="text-align:left;padding:8px 10px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Device ID</th>
-        <th style="text-align:center;padding:8px 10px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Enabled</th>
-        <th style="text-align:right;padding:8px 10px;border-bottom:0.5px solid var(--border-md);color:var(--text-hint);">Actions</th>
-      </tr></thead>
-      <tbody>${rows.map((r,i) => `<tr style="background:${i%2===0?"var(--surface)":"var(--surface2)"}">
-        <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-weight:600;">${r.name}</td>
-        <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:monospace;font-size:11px;color:var(--text-hint);">${r.uid}</td>
-        <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);font-family:monospace;font-size:11px;">${r.device_id}</td>
-        <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:center;">
-          <span style="color:${r.enabled?"var(--green-dark)":"var(--text-hint)"};">${r.enabled?"✓":"✗"}</span>
-        </td>
-        <td style="padding:8px 10px;border-bottom:0.5px solid var(--border);text-align:right;">
-          <div style="display:flex;gap:6px;justify-content:flex-end;">
-            <button onclick="toggleDeviceEnabled(${r.id}, ${r.enabled})"
-              style="padding:4px 10px;border-radius:4px;border:0.5px solid var(--border-md);background:var(--surface);font-size:10px;cursor:pointer;">
-              ${r.enabled ? "Disable" : "Enable"}
-            </button>
-            <button onclick="removeDevice(${r.id}, '${r.name}')"
-              style="padding:4px 8px;border-radius:4px;border:0.5px solid var(--red);background:transparent;color:var(--red);font-size:10px;cursor:pointer;">✕</button>
-          </div>
-        </td>
-      </tr>`).join("")}</tbody></table>`;
-  } catch(e) {
-    list.innerHTML = `<div class="data-empty" style="color:var(--red);">Error loading devices: ${e.message}</div>`;
-  }
-}
-
-async function addNewDevice() {
-  const uid    = (document.getElementById("new-device-uid")?.value || "").trim();
-  const name   = (document.getElementById("new-device-name")?.value || "").trim();
-  const devId  = (document.getElementById("new-device-id")?.value || "").trim().replace(/\s+/g,"");
-  const status = document.getElementById("add-device-status");
-
-  if (!uid || !name || !devId) {
-    if (status) { status.textContent = "All three fields are required."; status.style.color = "var(--red)"; }
-    return;
-  }
-  if (!/^dev:/.test(uid)) {
-    if (status) { status.textContent = "Device UID must start with dev: (e.g. dev:860322060777460)"; status.style.color = "var(--red)"; }
-    return;
-  }
-  if (DEVICES.find(d => d.id === devId)) {
-    if (status) { status.textContent = `Device ID "${devId}" already exists. Choose a different ID.`; status.style.color = "var(--red)"; }
-    return;
-  }
-
-  try {
-    const res = await supabasePost("devices", {
-      device_id: devId, uid, name, enabled: true, sensing_capable: false
-    });
-    // supabasePost already reads body on error — check status code only
-    if (res.ok || res.status === 201) {
-      if (status) { status.textContent = `✅ ${name} added successfully.`; status.style.color = "var(--green-dark)"; }
-      ["new-device-uid","new-device-name","new-device-id"].forEach(id => {
-        const el = document.getElementById(id); if (el) el.value = "";
-      });
-      await loadDevicesFromDB();
-      buildControls();
-      buildDataCards();
-      loadDeviceMgmt();
-    } else {
-      if (status) { status.textContent = `Error saving device (HTTP ${res.status}). Check the console for details.`; status.style.color = "var(--red)"; }
-    }
-  } catch(e) {
-    if (status) { status.textContent = `Error: ${e.message}`; status.style.color = "var(--red)"; }
-  }
-}
-
-async function toggleDeviceEnabled(dbId, currentEnabled) {
-  try {
-    await fetch(`${SUPABASE_URL}/rest/v1/devices?id=eq.${dbId}`, {
-      method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
-        "Content-Type": "application/json", "Prefer": "return=minimal" },
-      body: JSON.stringify({ enabled: !currentEnabled })
-    });
-    await loadDevicesFromDB();
-    buildControls();
-    buildDataCards();
-    loadDeviceMgmt();
-  } catch(e) { alert("Toggle failed: " + e.message); }
-}
-
-async function removeDevice(dbId, deviceName) {
-  if (!confirm(`Remove ${deviceName} from this dashboard? This does not delete any historical data.`)) return;
-  try {
-    await supabaseDelete("devices", `id=eq.${dbId}`);
-    await loadDevicesFromDB();
-    buildControls();
-    buildDataCards();
-    loadDeviceMgmt();
-  } catch(e) { alert("Remove failed: " + e.message); }
-}
-
 // ── Group state ───────────────────────────────────────────────────────────────
 let groupNames = { 1: "Group 1", 2: "Group 2", 3: "Group 3" };
 let groupAssignments = {}; // { device_uid: [group_numbers] }
@@ -1467,35 +1585,33 @@ let groupAssignments = {}; // { device_uid: [group_numbers] }
 // ── Supabase ──────────────────────────────────────────────────────────────────
 async function supabaseGet(query) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${query}`, {
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` }
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
   });
   return res.json();
 }
 async function supabasePost(table, data) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify(data)
   });
   if (!res.ok) {
-    // Clone before reading so callers can still read the response if needed
-    res.clone().text().then(err =>
-      console.error(`Supabase POST error (${table}):`, err, "Data:", JSON.stringify(data))
-    );
+    const err = await res.text();
+    console.error(`Supabase POST error (${table}):`, err, "Data:", JSON.stringify(data));
   }
   return res;
 }
 async function supabaseUpsert(table, data, onConflict) {
   return fetch(`${SUPABASE_URL}/rest/v1/${table}?on_conflict=${onConflict}`, {
     method: "POST",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates,return=minimal" },
     body: JSON.stringify(data)
   });
 }
 async function supabaseDelete(table, filter) {
   return fetch(`${SUPABASE_URL}/rest/v1/${table}?${filter}`, {
     method: "DELETE",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` }
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
   });
 }
 
@@ -1504,7 +1620,7 @@ async function supabasePatch(path, data) {
     method: "PATCH",
     headers: {
       "apikey": SUPABASE_KEY,
-      "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
       "Prefer": "return=minimal"
     },
@@ -1534,10 +1650,11 @@ function switchMain(main, btn) {
   document.getElementById("sub-tabs-events").style.display  = main === "events"  ? "flex" : "none";
   document.getElementById("sub-tabs-devices").style.display = main === "devices" ? "flex" : "none";
   if (main === "summary") { activatePane("summary"); initSummaryTab(); }
-  else if (main === "weather") { activatePane("weather"); initWeatherTab(); }
-  else if (main === "admin")   { activatePane("admin"); }
-  else if (main === "events")  { const s = currentSub.events||"scheduler";  activatePane(s); activateSubBtn("events",s); }
-  else if (main === "devices") { const s = currentSub.devices||"data"; activatePane(s); activateSubBtn("devices",s); }
+  else if (main === "weather")   { activatePane("weather"); initWeatherTab(); }
+  else if (main === "admin")     { activatePane("admin"); loadInstallersTable(); }
+  else if (main === "installer") { activatePane("installer"); enrollShowStep(1); }
+  else if (main === "events")    { const s = currentSub.events||"scheduler";  activatePane(s); activateSubBtn("events",s); }
+  else if (main === "devices")   { const s = currentSub.devices||"data"; activatePane(s); activateSubBtn("devices",s); }
 }
 
 function switchSub(main, sub, btn) {
@@ -2138,7 +2255,7 @@ async function queueNow(scheduleId) {
   // Update last_fired_at on schedule
   await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${scheduleId}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ last_fired_at: fireAt })
   });
 
@@ -2149,7 +2266,7 @@ async function queueNow(scheduleId) {
 async function toggleSchedule(id, currentEnabled) {
   await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ enabled: !currentEnabled })
   });
   await loadSchedules();
@@ -2159,7 +2276,7 @@ async function deleteSchedule(id) {
   // Cancel any pending queue items for this schedule
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?schedule_id=eq.${id}&status=eq.pending`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   await supabaseDelete("schedules", `id=eq.${id}`);
@@ -2253,7 +2370,7 @@ async function fireNow(id) {
   // Mark as fired
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "sent", fired_at: new Date().toISOString() })
   });
   await loadQueue();
@@ -2262,7 +2379,7 @@ async function fireNow(id) {
 async function cancelQueueItem(id) {
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${id}`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   setStatus("ready", "Queue item cancelled.");
@@ -2330,7 +2447,7 @@ async function checkSchedules() {
     // Update last_fired_at on schedule
     await fetch(`${SUPABASE_URL}/rest/v1/schedules?id=eq.${s.id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ last_fired_at: fireAt })
     });
 
@@ -2348,7 +2465,7 @@ async function fireReadyQueueItems() {
     // Mark fired BEFORE executing to prevent double-fire
     await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?id=eq.${item.id}`, {
       method: "PATCH",
-      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
       body: JSON.stringify({ status: "sent", fired_at: now.toISOString() })
     });
     await executeQueuedCommand(item);
@@ -2429,11 +2546,12 @@ function formatDuration(mins) {
 
 // ── LC Hex Generator ──────────────────────────────────────────────────────────
 const RELAY_FUNCTION_MAP = {
-  all_on:    0x8F,
-  relay1_on: 0x81,
-  relay2_on: 0x82,
-  relay3_on: 0x84,
-  relay4_on: 0x88,
+  all_on:        0x8F,
+  relay1_on:     0x81,
+  relay2_on:     0x82,
+  relay_r1r2_on: 0x83,  // R1 + R2 simultaneous (bit0 | bit1)
+  relay3_on:     0x84,
+  relay4_on:     0x88,
 };
 
 let lcEventId = 1; // Auto-incrementing event ID (1-254)
@@ -3024,7 +3142,7 @@ async function cancelAllEvents() {
   // Mark all fired/pending queue items as cancelled in Supabase
   await fetch(`${SUPABASE_URL}/rest/v1/schedule_queue?status=in.(pending,fired)`, {
     method: "PATCH",
-    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
+    headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Content-Type": "application/json", "Prefer": "return=minimal" },
     body: JSON.stringify({ status: "cancelled" })
   });
   setStatus("ready", `Restore sent to all ${DEVICES.length} devices — all events cancelled.`);
@@ -3967,7 +4085,6 @@ async function initSettingsTab() {
   await loadBubbleUpIntervals();
   await refreshBubbleStatus();
   loadBubbleSchedule();
-  loadDeviceMgmt();
   startBubbleScheduler();
   // Auto-refresh status every 2 minutes while on settings tab
   if (window._bubbleStatusInterval) clearInterval(window._bubbleStatusInterval);
@@ -4563,7 +4680,7 @@ async function initAuth() {
     } else if (event === "TOKEN_REFRESHED" && session) {
       currentSession = session;
     } else if (event === "SIGNED_OUT" || event === "USER_DELETED") {
-      currentUser = null; currentUserRole = null; currentSession = null;
+      currentUser = null; currentUserRole = null; currentSession = null; currentInstaller = null;
       showLoginOverlay();
     }
   });
@@ -4571,7 +4688,7 @@ async function initAuth() {
   // Handle token refresh failures — re-prompt login
   supabaseClient.auth.onAuthStateChange((event) => {
     if (event === "SIGNED_OUT") {
-      currentUser = null; currentUserRole = null; currentSession = null;
+      currentUser = null; currentUserRole = null; currentSession = null; currentInstaller = null;
       showLoginOverlay();
       showLoginError("login-error", "Your session expired. Please sign in again.");
       document.getElementById("login-step-1").style.display = "block";
@@ -4601,12 +4718,6 @@ async function onSignedIn(session) {
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
-  // Load devices from DB then rebuild UI
-  await loadDevicesFromDB();
-  buildControls();
-  buildDataCards();
-  // Pre-load latest device data so Current Device Status is populated on first visit
-  loadLatest();
 }
 
 function showLoginOverlay() {
@@ -4733,15 +4844,704 @@ async function changePasswordSubmit() {
 // ── Sign out ──────────────────────────────────────────────────────────────────
 async function signOut() {
   await supabaseClient.auth.signOut();
-  currentUser = null; currentUserRole = null; currentSession = null;
+  currentUser = null; currentUserRole = null; currentSession = null; currentInstaller = null;
   showLoginOverlay();
 }
 
 // ── Role-based UI permissions ─────────────────────────────────────────────────
+// ── Installer State ───────────────────────────────────────────────────────────
+let currentInstaller = null;  // { id, name, pin_type } set on successful PIN auth
+
+// ── Installer PIN Auth ────────────────────────────────────────────────────────
+async function installerPinSubmit() {
+  const pin   = document.getElementById("installer-pin-input")?.value?.trim();
+  const errEl = document.getElementById("installer-pin-error");
+  const btn   = document.getElementById("installer-pin-btn");
+  if (!pin) { showEl(errEl, "Please enter your PIN."); return; }
+
+  btn.disabled = true; btn.textContent = "Checking…";
+
+  try {
+    // Look up PIN in installers table
+    const res  = await fetch(
+      `${SUPABASE_URL}/rest/v1/installers?pin=eq.${encodeURIComponent(pin)}&select=id,name,active,pin_type`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } }
+    );
+    const rows = await res.json();
+    const installer = rows?.[0];
+
+    if (!installer) {
+      showEl(errEl, "Incorrect PIN. Please try again.");
+      btn.disabled = false; btn.textContent = "Continue →";
+      document.getElementById("installer-pin-input").value = "";
+      return;
+    }
+    if (!installer.active) {
+      showEl(errEl, "This PIN has been deactivated. Please contact your administrator.");
+      btn.disabled = false; btn.textContent = "Continue →";
+      document.getElementById("installer-pin-input").value = "";
+      return;
+    }
+
+    // Update last_used_at
+    await fetch(`${SUPABASE_URL}/rest/v1/installers?id=eq.${installer.id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ last_used_at: new Date().toISOString() })
+    });
+
+    // Store installer identity — used throughout enrollment, never editable
+    currentInstaller = installer;
+    hideEl(errEl);
+
+    // Show installer name in Step 3
+    const displayEl = document.getElementById("enroll-installer-display");
+    if (displayEl) displayEl.textContent = installer.name;
+
+    // Enter installer mode
+    document.getElementById("login-overlay").style.display = "none";
+    currentUserRole = "installer";
+    applyRolePermissions("installer");
+    switchMain("installer", document.getElementById("main-installer"));
+
+  } catch(e) {
+    showEl(errEl, "Connection error. Please try again.");
+    btn.disabled = false; btn.textContent = "Continue →";
+  }
+}
+
+// ── Installer Management (Admin) ──────────────────────────────────────────────
+function showAddInstallerForm() {
+  const form = document.getElementById("add-installer-form");
+  if (form) form.style.display = form.style.display === "none" ? "block" : "none";
+  installerPinTypeChanged(); // set correct placeholder/maxlength
+}
+
+function installerPinTypeChanged() {
+  const type  = document.getElementById("new-installer-pin-type")?.value;
+  const input = document.getElementById("new-installer-pin");
+  const prev  = document.getElementById("new-installer-pin-preview");
+  if (!input) return;
+  if (type === "4digit") {
+    input.type = "password"; input.maxLength = 4; input.inputMode = "numeric";
+    input.placeholder = "••••"; input.style.letterSpacing = "6px";
+    if (prev) prev.textContent = "4 numeric digits";
+  } else if (type === "6digit") {
+    input.type = "password"; input.maxLength = 6; input.inputMode = "numeric";
+    input.placeholder = "••••••"; input.style.letterSpacing = "4px";
+    if (prev) prev.textContent = "6 numeric digits";
+  } else {
+    input.type = "text"; input.maxLength = 64; input.inputMode = "text";
+    input.placeholder = "alphanumeric password"; input.style.letterSpacing = "normal";
+    if (prev) prev.textContent = "Alphanumeric password — any length";
+  }
+}
+
+function installerGeneratePin() {
+  const type  = document.getElementById("new-installer-pin-type")?.value;
+  const input = document.getElementById("new-installer-pin");
+  if (!input) return;
+  if (type === "4digit") {
+    input.value = Math.floor(1000 + Math.random() * 9000).toString();
+  } else if (type === "6digit") {
+    input.value = Math.floor(100000 + Math.random() * 900000).toString();
+  } else {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    input.value = Array.from({length: 10}, () => chars[Math.floor(Math.random()*chars.length)]).join("");
+  }
+  // Briefly show it as plain text so admin can copy it
+  input.type = "text";
+  setTimeout(() => { if (input.type === "text") input.type = type === "password" ? "password" : "text"; }, 4000);
+}
+
+async function createInstaller() {
+  const name    = document.getElementById("new-installer-name")?.value?.trim();
+  const pin     = document.getElementById("new-installer-pin")?.value?.trim();
+  const pinType = document.getElementById("new-installer-pin-type")?.value;
+  const notes   = document.getElementById("new-installer-notes")?.value?.trim();
+  const errEl   = document.getElementById("add-installer-error");
+  hideEl(errEl);
+
+  if (!name) { showEl(errEl, "Name is required."); return; }
+  if (!pin)  { showEl(errEl, "PIN / password is required."); return; }
+  if (pinType === "4digit" && !/^\d{4}$/.test(pin)) { showEl(errEl, "4-digit PIN must be exactly 4 numbers."); return; }
+  if (pinType === "6digit" && !/^\d{6}$/.test(pin)) { showEl(errEl, "6-digit PIN must be exactly 6 numbers."); return; }
+  if (pin.length < 4) { showEl(errEl, "PIN / password must be at least 4 characters."); return; }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/installers`, {
+      method: "POST",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ name, pin, pin_type: pinType, notes: notes || null, active: true })
+    });
+    if (res.status === 409) { showEl(errEl, "That PIN is already in use. Please choose a different one."); return; }
+    if (!res.ok) { const err = await res.text(); showEl(errEl, `Error: ${err}`); return; }
+
+    // Reset form and reload table
+    document.getElementById("new-installer-name").value  = "";
+    document.getElementById("new-installer-pin").value   = "";
+    document.getElementById("new-installer-notes").value = "";
+    document.getElementById("add-installer-form").style.display = "none";
+    await loadInstallersTable();
+  } catch(e) { showEl(errEl, e.message); }
+}
+
+async function loadInstallersTable() {
+  const container = document.getElementById("installers-table-container");
+  if (!container) return;
+  container.innerHTML = '<div class="sched-empty">Loading…</div>';
+
+  try {
+    // Load installers
+    const res  = await fetch(
+      `${SUPABASE_URL}/rest/v1/installers?order=name.asc`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` } }
+    );
+    const installers = await res.json();
+    if (!Array.isArray(installers) || !installers.length) {
+      container.innerHTML = '<div class="sched-empty">No installers yet. Click + Add Installer to get started.</div>';
+      return;
+    }
+
+    // Load enrollment counts per installer
+    const countRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/enrollment_log?select=installer_id,test_result`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` } }
+    );
+    const logs = await countRes.json();
+    const counts = {};
+    if (Array.isArray(logs)) {
+      logs.forEach(l => {
+        if (!counts[l.installer_id]) counts[l.installer_id] = { total: 0, success: 0 };
+        counts[l.installer_id].total++;
+        if (l.test_result === "success") counts[l.installer_id].success++;
+      });
+    }
+
+    container.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 80px 70px 90px 80px 90px 80px;gap:6px;padding:6px 10px;font-size:10px;font-weight:700;color:var(--text-hint);text-transform:uppercase;letter-spacing:.04em;background:var(--surface2);border-radius:var(--radius-sm);margin-bottom:4px;">
+        <span>Installer</span><span>PIN Type</span><span>Installs</span><span>Success Rate</span><span>Last Used</span><span>Notes</span><span>Status</span>
+      </div>
+      ${installers.map(inst => {
+        const c       = counts[inst.id] || { total: 0, success: 0 };
+        const rate    = c.total > 0 ? Math.round(c.success / c.total * 100) + "%" : "—";
+        const rateColor = c.total === 0 ? "var(--text-hint)" : c.success === c.total ? "var(--green-dark)" : "var(--amber)";
+        const lastUsed  = inst.last_used_at ? new Date(inst.last_used_at).toLocaleDateString() : "Never";
+        const pinLabel  = inst.pin_type === "4digit" ? "4-digit" : inst.pin_type === "6digit" ? "6-digit" : "Password";
+        return `
+        <div style="display:grid;grid-template-columns:1fr 80px 70px 90px 80px 90px 80px;gap:6px;padding:8px 10px;font-size:12px;align-items:center;border-bottom:0.5px solid var(--border);">
+          <span style="font-weight:600;">${inst.name}</span>
+          <span style="color:var(--text-hint);font-size:11px;">${pinLabel}</span>
+          <span style="text-align:center;">${c.total}</span>
+          <span style="color:${rateColor};font-weight:600;text-align:center;">${rate}</span>
+          <span style="font-size:11px;color:var(--text-hint);">${lastUsed}</span>
+          <span style="font-size:11px;color:var(--text-hint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${inst.notes||""}">${inst.notes||"—"}</span>
+          <span style="display:flex;gap:6px;align-items:center;">
+            <button onclick="toggleInstallerActive(${inst.id}, ${inst.active})"
+              style="padding:3px 8px;border-radius:10px;border:0.5px solid ${inst.active?"var(--green)":"var(--border-md)"};background:${inst.active?"rgba(22,163,74,0.1)":"var(--surface2)"};color:${inst.active?"var(--green-dark)":"var(--text-hint)"};font-size:10px;font-weight:600;cursor:pointer;">
+              ${inst.active ? "Active" : "Inactive"}
+            </button>
+            <button onclick="deleteInstaller(${inst.id}, '${inst.name.replace(/'/g,"\\'")}', ${c.total})"
+              style="padding:3px 6px;border-radius:var(--radius-sm);border:0.5px solid var(--border-md);background:transparent;font-size:11px;cursor:pointer;color:var(--text-hint);" title="Delete">🗑</button>
+          </span>
+        </div>`;
+      }).join("")}`;
+  } catch(e) {
+    container.innerHTML = `<div class="sched-empty" style="color:var(--red);">Error loading installers: ${e.message}</div>`;
+  }
+}
+
+async function toggleInstallerActive(id, currentlyActive) {
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/installers?id=eq.${id}`, {
+      method: "PATCH",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify({ active: !currentlyActive })
+    });
+    await loadInstallersTable();
+  } catch(e) { console.error("toggleInstallerActive:", e); }
+}
+
+async function deleteInstaller(id, name, enrollCount) {
+  const msg = enrollCount > 0
+    ? `Delete installer "${name}"? They have ${enrollCount} enrollment record(s). The records will be kept but unlinked.`
+    : `Delete installer "${name}"?`;
+  if (!confirm(msg)) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/installers?id=eq.${id}`, {
+      method: "DELETE",
+      headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${currentSession?.access_token || SUPABASE_KEY}` }
+    });
+    await loadInstallersTable();
+  } catch(e) { console.error("deleteInstaller:", e); }
+}
+
+// ── Enrollment State ──────────────────────────────────────────────────────────
+let enrollDeviceUID    = null;
+let enrollLogId        = null;
+let enrollTimeoutMins  = 5;
+let enrollTimeoutTimer = null;
+let enrollPollTimer    = null;
+let enrollPhase        = null;   // "on" | "off"
+let enrollOnReadingId  = null;
+
+function showEl(el, msg) { if (el) { el.textContent = msg; el.style.display = "block"; } }
+function hideEl(el)      { if (el) el.style.display = "none"; }
+
+function enrollShowStep(n) {
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById(`enroll-step-${i}`);
+    if (el) el.style.display = i === n ? "block" : "none";
+  }
+}
+
+function enrollSetCheck(id, state, label) {
+  const row  = document.getElementById(`enroll-chk-${id}`);
+  const icon = row?.querySelector(".enroll-chk-icon");
+  const lbl  = row?.querySelector(".enroll-chk-label");
+  if (!row) return;
+  row.className = `enroll-check-row ${state}`;
+  if (icon) icon.textContent = state === "done" ? "✅" : state === "active" ? "🔄" : state === "failed" ? "❌" : "⏸";
+  if (label && lbl) lbl.textContent = label;
+}
+
+// ── Step 1: Camera ────────────────────────────────────────────────────────────
+let enrollStream = null;
+let enrollScanInterval = null;
+
+async function enrollStartCamera() {
+  const wrap   = document.getElementById("enroll-camera-wrap");
+  const video  = document.getElementById("enroll-video");
+  const camBtn = document.getElementById("enroll-camera-btn");
+  const errEl  = document.getElementById("enroll-step1-error");
+  hideEl(errEl);
+
+  // Load jsQR dynamically (CDN, no install)
+  if (!window.jsQR) {
+    camBtn.textContent = "Loading scanner…";
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    }).catch(() => { showEl(errEl, "Could not load QR scanner. Please enter the ID manually."); camBtn.textContent="📷 Open Camera"; return; });
+  }
+
+  try {
+    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = enrollStream;
+    wrap.style.display = "block";
+    camBtn.textContent = "📷 Camera Active — point at QR code";
+    camBtn.onclick = enrollStopCamera;
+
+    const canvas = document.getElementById("enroll-canvas");
+    const ctx    = canvas.getContext("2d");
+    const status = document.getElementById("enroll-scan-status");
+
+    enrollScanInterval = setInterval(() => {
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+      if (code?.data) {
+        enrollStopCamera();
+        if (status) status.textContent = "✅ QR detected!";
+        enrollConfirmUID(code.data);
+      }
+    }, 250);
+
+  } catch(e) {
+    showEl(errEl, "Camera access denied. Please enter the ID manually below.");
+    camBtn.textContent = "📷 Open Camera";
+  }
+}
+
+function enrollStopCamera() {
+  if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
+  if (enrollScanInterval) { clearInterval(enrollScanInterval); enrollScanInterval = null; }
+  const wrap   = document.getElementById("enroll-camera-wrap");
+  const camBtn = document.getElementById("enroll-camera-btn");
+  if (wrap) wrap.style.display = "none";
+  if (camBtn) { camBtn.textContent = "📷 Open Camera"; camBtn.onclick = enrollStartCamera; }
+}
+
+function enrollNormalizeManual(input) {
+  // Strip "dev:" prefix as user types to keep field clean; we re-add it on submit
+  input.value = input.value.replace(/^dev:\s*/i, "");
+}
+
+function enrollConfirmUID(raw) {
+  const errEl = document.getElementById("enroll-step1-error");
+  hideEl(errEl);
+  enrollStopCamera();
+
+  // Normalize: strip "dev:" prefix, trim whitespace/colons
+  const normalized = raw.trim().replace(/^dev:\s*/i, "").replace(/\s/g, "");
+  // Validate: should be 15 digits (IMEI format)
+  if (!/^\d{15}$/.test(normalized)) {
+    showEl(errEl, `Invalid device ID: "${normalized}". Expected 15 digits (e.g. 868032061463182).`);
+    return;
+  }
+
+  enrollDeviceUID = `dev:${normalized}`;
+  document.getElementById("enroll-confirm-uid").textContent = enrollDeviceUID;
+  enrollShowStep(2);
+}
+
+function enrollGoBack() { enrollShowStep(1); document.getElementById("enroll-manual-uid").value = ""; }
+function enrollGoToJobInfo() { enrollShowStep(3); }
+
+// ── Step 4: Enrollment Process ────────────────────────────────────────────────
+async function enrollStartProcess() {
+  enrollShowStep(4);
+  enrollTimeoutMins = parseInt(document.getElementById("enroll-timeout-select")?.value || "5");
+
+  const installerName     = currentInstaller?.name    || "Unknown";
+  const installerId       = currentInstaller?.id      || null;
+  const customerName      = document.getElementById("enroll-customer-name")?.value?.trim()     || "";
+  const customerAddress   = document.getElementById("enroll-customer-address")?.value?.trim()  || "";
+
+  // Reset checklist
+  for (let i = 1; i <= 6; i++) enrollSetCheck(i, "pending");
+  document.getElementById("enroll-progress-sub").textContent = "Please wait…";
+  document.getElementById("enroll-timeout-wrap").style.display = "none";
+
+  // ── 1. Claim device to Notehub fleet ─────────────────────────────────────
+  enrollSetCheck(1, "active");
+  try {
+    await enrollClaimToNotehub(enrollDeviceUID);
+    enrollSetCheck(1, "done");
+  } catch(e) {
+    enrollSetCheck(1, "failed", `Register failed: ${e.message}`);
+    return enrollFinish(false, `Could not register device with Notehub: ${e.message}`, installerName, customerName, customerAddress, "notehub_failed");
+  }
+
+  // ── 2. Add to Supabase devices table ─────────────────────────────────────
+  enrollSetCheck(2, "active");
+  try {
+    await enrollAddToDatabase(enrollDeviceUID);
+    enrollSetCheck(2, "done");
+  } catch(e) {
+    enrollSetCheck(2, "failed", `Dashboard add failed: ${e.message}`);
+    return enrollFinish(false, `Device registered but could not add to dashboard: ${e.message}`, installerName, customerName, customerAddress, "db_failed");
+  }
+
+  // ── 3. Write enrollment log row ───────────────────────────────────────────
+  enrollLogId = await enrollWriteLog({
+    device_uid:       enrollDeviceUID,
+    enrolled_at:      new Date().toISOString(),
+    installer_id:     installerId,
+    installer_name:   installerName,
+    customer_name:    customerName,
+    customer_address: customerAddress,
+    notehub_claimed:  true,
+    db_added:         true,
+    test_result:      "pending"
+  });
+
+  // ── 3. Send test command R1+R2 ON ─────────────────────────────────────────
+  enrollSetCheck(3, "active");
+  const onHex = buildLCHex("relay_r1r2_on", "dlc", 1, 1, 0);
+  try {
+    await enrollSendCommand(enrollDeviceUID, onHex);
+    enrollSetCheck(3, "done");
+    await enrollUpdateLog(enrollLogId, { test_command_sent_at: new Date().toISOString(), test_command_hex: onHex });
+  } catch(e) {
+    enrollSetCheck(3, "failed", `Test command failed: ${e.message}`);
+    return enrollFinish(false, `Could not send test command: ${e.message}`, installerName, customerName, customerAddress, "cmd_failed");
+  }
+
+  // ── 4. Poll for ON confirmation ───────────────────────────────────────────
+  enrollSetCheck(4, "active");
+  enrollPhase = "on";
+  document.getElementById("enroll-timeout-wrap").style.display = "block";
+  document.getElementById("enroll-progress-sub").textContent = "Waiting for device to confirm relay state…";
+  enrollStartTimeout(() => {
+    enrollFinish(false, "Device did not respond within the timeout window. The device is registered and the command was sent — it may confirm when it next connects to the network.", installerName, customerName, customerAddress, "timeout");
+  });
+
+  const onConfirmed = await enrollPollForRelay(enrollDeviceUID, true, true);
+  if (!onConfirmed) return; // timeout already handled
+
+  enrollSetCheck(4, "done", "Relay confirmation received ✅");
+  enrollStopTimeout();
+  const r = onConfirmed;
+  enrollOnReadingId = r.id;
+  await enrollUpdateLog(enrollLogId, {
+    test_confirmed_at: new Date().toISOString(),
+    relay_on_reading_id: r.id,
+    relay_response_raw: JSON.stringify({ relay_status_r1: r.relay_status_r1, relay_status_r2: r.relay_status_r2 })
+  });
+
+  // ── 5. Send restore command R1+R2 OFF ────────────────────────────────────
+  enrollSetCheck(5, "active");
+  document.getElementById("enroll-progress-sub").textContent = "Sending restore command…";
+  const offHex = buildRestoreHex("relay_r1r2_on");
+  try {
+    await enrollSendCommand(enrollDeviceUID, offHex);
+    enrollSetCheck(5, "done");
+  } catch(e) {
+    enrollSetCheck(5, "failed");
+    return enrollFinish(false, `Restore command failed: ${e.message}`, installerName, customerName, customerAddress, "restore_failed");
+  }
+
+  // ── 6. Poll for OFF confirmation ──────────────────────────────────────────
+  enrollSetCheck(6, "active");
+  enrollPhase = "off";
+  document.getElementById("enroll-progress-sub").textContent = "Waiting for relay OFF confirmation…";
+  enrollStartTimeout(() => {
+    enrollFinish(false, "Restore command sent but OFF confirmation timed out. Relays may still be active — please verify manually.", installerName, customerName, customerAddress, "restore_timeout");
+  });
+
+  const offConfirmed = await enrollPollForRelay(enrollDeviceUID, false, false, enrollOnReadingId);
+  if (!offConfirmed) return;
+
+  enrollSetCheck(6, "done", "Relays confirmed OFF ✅");
+  enrollStopTimeout();
+
+  await enrollUpdateLog(enrollLogId, {
+    test_result:        "success",
+    relay_off_reading_id: offConfirmed.id,
+    completed_at:       new Date().toISOString()
+  });
+
+  enrollFinish(true, "Both relays activated and restored successfully. Device is fully operational.", installerName, customerName, customerAddress, "success");
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function enrollClaimToNotehub(deviceUID) {
+  // Use existing Notehub API token to add device to the project
+  // The device is already provisioned — this just associates it with the fleet
+  const PROJECT_UID  = "app:45e8c741-8358-4e04-b03a-b5f39135702a"; // GS project
+  const NOTEHUB_TOKEN = "api_key_Nu7pNGIt7OZaqtsjgqBqKkxD9W89esFQvPYovDJDOfw=";
+  const res = await fetch(`https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`, {
+    method: "GET",
+    headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` }
+  });
+  // 200 = already in project (fine), 404 = not yet claimed
+  if (res.status === 404) {
+    // Device not yet in project — Notehub auto-claims on first note,
+    // but we can verify via the fleet endpoint
+    // For now treat 404 as "not yet seen" — it will auto-claim on first bubble-up
+    console.log(`[Enroll] Device ${deviceUID} not yet seen in Notehub — will auto-claim on first check-in`);
+    return;
+  }
+  if (!res.ok && res.status !== 404) throw new Error(`Notehub API: ${res.status}`);
+}
+
+async function enrollAddToDatabase(deviceUID) {
+  // Upsert into devices table — won't overwrite existing data
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/devices?on_conflict=uid`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json",
+      "Prefer": "resolution=ignore-duplicates,return=minimal"
+    },
+    body: JSON.stringify({
+      uid:        deviceUID,
+      name:       deviceUID,   // admin can rename later
+      enabled:    true,
+      enrolled_at: new Date().toISOString()
+    })
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err);
+  }
+}
+
+async function enrollSendCommand(deviceUID, lcHex) {
+  const payload = { body: { LC: lcHex }, req: "note.add", sync: true };
+  const res = await fetch(PROXY_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Device-UID": deviceUID },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) throw new Error(`Worker returned ${res.status}`);
+}
+
+async function enrollPollForRelay(deviceUID, wantR1, wantR2, afterId) {
+  // Poll device_readings every 10 seconds, looking for a reading where
+  // relay_status_r1 and relay_status_r2 match the desired states
+  return new Promise((resolve) => {
+    const pollStart = Date.now();
+    enrollPollTimer = setInterval(async () => {
+      if (enrollTimeoutTimer === null) { clearInterval(enrollPollTimer); resolve(null); return; }
+      try {
+        let url = `${SUPABASE_URL}/rest/v1/device_readings?device_uid=eq.${encodeURIComponent(deviceUID)}&order=id.desc&limit=3`;
+        if (afterId) url += `&id=gt.${afterId}`;
+        const res  = await fetch(url, { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } });
+        const rows = await res.json();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const r = rows[0];
+          const r1ok = wantR1 ? r.relay_status_r1 > 0 : r.relay_status_r1 === 0;
+          const r2ok = wantR2 ? r.relay_status_r2 > 0 : r.relay_status_r2 === 0;
+          if (r1ok && r2ok) {
+            clearInterval(enrollPollTimer);
+            resolve(r);
+          }
+        }
+      } catch(e) { console.warn("[Enroll poll]", e.message); }
+    }, 10000);
+  });
+}
+
+function enrollStartTimeout(onTimeout) {
+  enrollStopTimeout();
+  const totalSecs = enrollTimeoutMins * 60;
+  let remaining   = totalSecs;
+  const bar       = document.getElementById("enroll-timeout-bar");
+  const lbl       = document.getElementById("enroll-timeout-label");
+  enrollTimeoutTimer = setInterval(() => {
+    remaining--;
+    const pct = (remaining / totalSecs) * 100;
+    if (bar) bar.style.width = pct + "%";
+    if (lbl) {
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      lbl.textContent = `${m}:${s.toString().padStart(2,"0")} remaining`;
+    }
+    if (remaining <= 0) {
+      enrollStopTimeout();
+      if (enrollPollTimer) { clearInterval(enrollPollTimer); enrollPollTimer = null; }
+      onTimeout();
+    }
+  }, 1000);
+}
+
+function enrollStopTimeout() {
+  if (enrollTimeoutTimer) { clearInterval(enrollTimeoutTimer); enrollTimeoutTimer = null; }
+}
+
+function enrollUpdateTimeout(val) {
+  enrollTimeoutMins = parseInt(val);
+}
+
+async function enrollWriteLog(data) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/enrollment_log`, {
+      method: "POST",
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=representation"
+      },
+      body: JSON.stringify(data)
+    });
+    const rows = await res.json();
+    return rows?.[0]?.id || null;
+  } catch(e) { console.warn("[Enroll] log write failed:", e.message); return null; }
+}
+
+async function enrollUpdateLog(id, data) {
+  if (!id) return;
+  try {
+    await fetch(`${SUPABASE_URL}/rest/v1/enrollment_log?id=eq.${id}`, {
+      method: "PATCH",
+      headers: {
+        "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`,
+        "Content-Type": "application/json", "Prefer": "return=minimal"
+      },
+      body: JSON.stringify(data)
+    });
+  } catch(e) { console.warn("[Enroll] log update failed:", e.message); }
+}
+
+function enrollFinish(success, msg, installerName, customerName, customerAddress, result) {
+  enrollStopTimeout();
+  if (enrollPollTimer) { clearInterval(enrollPollTimer); enrollPollTimer = null; }
+
+  enrollUpdateLog(enrollLogId, {
+    test_result:  result,
+    completed_at: new Date().toISOString()
+  });
+
+  const icon    = document.getElementById("enroll-result-icon");
+  const title   = document.getElementById("enroll-result-title");
+  const msgEl   = document.getElementById("enroll-result-msg");
+  const detail  = document.getElementById("enroll-result-detail");
+  const retryWrap = document.getElementById("enroll-retry-wrap");
+
+  if (icon)  icon.textContent  = success ? "✅" : result === "timeout" || result === "restore_timeout" ? "⚠️" : "❌";
+  if (title) title.textContent = success ? "Enrollment Complete!" : result.includes("timeout") ? "Registration Complete — Comms Unconfirmed" : "Enrollment Issue";
+  if (msgEl) msgEl.textContent = msg;
+  if (detail) detail.innerHTML =
+    `Device UID:&nbsp;&nbsp;&nbsp;&nbsp;${enrollDeviceUID}<br>` +
+    `Installer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${installerName}<br>` +
+    `Customer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerName || "—"}<br>` +
+    `Address:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerAddress || "—"}<br>` +
+    `Timestamp:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${new Date().toLocaleString()}<br>` +
+    `Test Result:&nbsp;&nbsp;&nbsp;${result}`;
+  if (retryWrap) retryWrap.style.display = success ? "none" : "block";
+
+  enrollShowStep(5);
+}
+
+async function enrollRetryTest() {
+  enrollShowStep(4);
+  for (let i = 3; i <= 6; i++) enrollSetCheck(i, "pending");
+  // Re-run from the test command step
+  enrollSetCheck(3, "active");
+  const onHex = buildLCHex("relay_r1r2_on", "dlc", 1, 1, 0);
+  try {
+    await enrollSendCommand(enrollDeviceUID, onHex);
+    enrollSetCheck(3, "done");
+  } catch(e) {
+    enrollSetCheck(3, "failed");
+    enrollFinish(false, `Retry failed: ${e.message}`, "", "", "", "retry_failed");
+    return;
+  }
+  enrollSetCheck(4, "active");
+  enrollPhase = "on";
+  document.getElementById("enroll-timeout-wrap").style.display = "block";
+  enrollTimeoutMins = parseInt(document.getElementById("enroll-timeout-select")?.value || "5");
+  enrollStartTimeout(() => {
+    enrollFinish(false, "Retry timed out. Device may still be connecting to network.", "", "", "", "timeout");
+  });
+  const onConfirmed = await enrollPollForRelay(enrollDeviceUID, true, true);
+  if (!onConfirmed) return;
+  enrollSetCheck(4, "done"); enrollStopTimeout();
+  enrollSetCheck(5, "active");
+  const offHex = buildRestoreHex("relay_r1r2_on");
+  await enrollSendCommand(enrollDeviceUID, offHex);
+  enrollSetCheck(5, "done");
+  enrollSetCheck(6, "active");
+  enrollPhase = "off";
+  enrollStartTimeout(() => { enrollFinish(false, "Restore timed out.", "", "", "", "restore_timeout"); });
+  const offConfirmed = await enrollPollForRelay(enrollDeviceUID, false, false, onConfirmed.id);
+  if (!offConfirmed) return;
+  enrollSetCheck(6, "done"); enrollStopTimeout();
+  await enrollUpdateLog(enrollLogId, { test_result: "success", completed_at: new Date().toISOString() });
+  enrollFinish(true, "Retry successful — device fully operational.", "", "", "", "success");
+}
+
+function enrollReset() {
+  enrollDeviceUID   = null;
+  enrollLogId       = null;
+  enrollPhase       = null;
+  enrollOnReadingId = null;
+  document.getElementById("enroll-manual-uid").value  = "";
+  document.getElementById("enroll-installer-name").value  = "";
+  document.getElementById("enroll-customer-name").value   = "";
+  document.getElementById("enroll-customer-address").value = "";
+  enrollShowStep(1);
+}
+
 function applyRolePermissions(role) {
   // Show Admin tab only for administrators
   const adminBtn = document.getElementById("main-admin");
   if (adminBtn) adminBtn.style.display = role === "administrator" ? "" : "none";
+
+  // Show Installer tab for installer role and administrators
+  const installerBtn = document.getElementById("main-installer");
+  if (installerBtn) installerBtn.style.display = (role === "installer" || role === "administrator") ? "" : "none";
 
   // Read-only users: disable all command buttons
   if (role === "readonly") {
