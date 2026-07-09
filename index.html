@@ -320,8 +320,7 @@
   }
 </style>
   <!-- jsQR: loaded at startup for installer QR scanning -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
-</head>
+  <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script></head>
 <body>
 
 <!-- ── STICKY HEADER ── -->
@@ -5147,8 +5146,29 @@ async function enrollStartCamera() {
   const errEl  = document.getElementById("enroll-step1-error");
   hideEl(errEl);
 
+  // Try loading jsQR if not already available (fallback if head script failed)
   if (!window.jsQR) {
-    showEl(errEl, "QR scanner not available. Please enter the ID manually.");
+    camBtn.textContent = "Loading scanner…";
+    const cdns = [
+      "https://unpkg.com/jsqr@1.4.0/dist/jsQR.js",
+      "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"
+    ];
+    for (const src of cdns) {
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src; s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+        if (window.jsQR) break;
+      } catch(e) { continue; }
+    }
+    camBtn.textContent = "📷 Open Camera";
+  }
+
+  if (!window.jsQR) {
+    showEl(errEl, "QR scanner failed to load. Please enter the device ID manually below.");
     return;
   }
 
