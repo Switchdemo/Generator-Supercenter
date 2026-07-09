@@ -319,6 +319,8 @@
     #map { height: 320px; }
   }
 </style>
+  <!-- jsQR: loaded at startup for installer QR scanning -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
 </head>
 <body>
 
@@ -5145,15 +5147,9 @@ async function enrollStartCamera() {
   const errEl  = document.getElementById("enroll-step1-error");
   hideEl(errEl);
 
-  // Load jsQR dynamically (CDN, no install)
   if (!window.jsQR) {
-    camBtn.textContent = "Loading scanner…";
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    }).catch(() => { showEl(errEl, "Could not load QR scanner. Please enter the ID manually."); camBtn.textContent="📷 Open Camera"; return; });
+    showEl(errEl, "QR scanner not available. Please enter the ID manually.");
+    return;
   }
 
   try {
@@ -5184,6 +5180,7 @@ async function enrollStartCamera() {
   } catch(e) {
     showEl(errEl, "Camera access denied. Please enter the ID manually below.");
     camBtn.textContent = "📷 Open Camera";
+    camBtn.onclick = enrollStartCamera;
   }
 }
 
