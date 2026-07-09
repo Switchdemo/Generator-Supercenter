@@ -5233,8 +5233,17 @@ function enrollConfirmUID(raw) {
   hideEl(errEl);
   enrollStopCamera();
 
-  // Normalize: strip "dev:" prefix, trim whitespace/colons
-  const normalized = raw.trim().replace(/^dev:\s*/i, "").replace(/\s/g, "");
+  let normalized = raw.trim();
+
+  // Handle qrgo.org URL format: http://qrgo.org/id/868032061463182/XXXXXX
+  const qrgoMatch = normalized.match(/qrgo\.org\/id\/(\d{15})/i);
+  if (qrgoMatch) {
+    normalized = qrgoMatch[1];
+  } else {
+    // Strip "dev:" prefix if present, remove whitespace
+    normalized = normalized.replace(/^dev:\s*/i, "").replace(/\s/g, "");
+  }
+
   // Validate: should be 15 digits (IMEI format)
   if (!/^\d{15}$/.test(normalized)) {
     showEl(errEl, `Invalid device ID: "${normalized}". Expected 15 digits (e.g. 868032061463182).`);
