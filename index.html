@@ -5378,33 +5378,16 @@ async function enrollStartProcess() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function enrollClaimToNotehub(deviceUID) {
-  const PROJECT_UID   = "app:45e8c741-8358-4e04-b03a-b5f39135702a";
-  const FLEET_UID     = "fleet:31fca5e2-9529-4aa0-9051-54777a47241d"; // Honeywell Generator Superstore
-  const NOTEHUB_TOKEN = "api_key_Nu7pNGIt7OZaqtsjgqBqKkxD9W89esFQvPYovDJDOfw=";
-
-  // Check if device exists in project (404 = not yet seen, that's fine)
-  const checkRes = await fetch(
-    `https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`,
-    { headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` } }
-  );
-  if (!checkRes.ok && checkRes.status !== 404) {
-    throw new Error(`Notehub device check failed: ${checkRes.status}`);
-  }
-
-  // Assign device to the Honeywell Generator Superstore fleet
-  const fleetRes = await fetch(
-    `https://api.notefile.net/v1/projects/${PROJECT_UID}/fleets/${FLEET_UID}/devices`,
-    {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ device_uids: [deviceUID] })
-    }
-  );
-  if (!fleetRes.ok && fleetRes.status !== 409) {
-    const err = await fleetRes.text();
-    throw new Error(`Notehub fleet assignment failed: ${err}`);
-  }
-  console.log(`[Enroll] ${deviceUID} assigned to GS fleet`);
+  // Route through worker to avoid CORS — worker calls Notehub server-side
+  const res = await fetch(`${PROXY_URL}enroll`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ device_uid: deviceUID })
+  });
+  const data = await res.json();
+  console.log(`[Enroll] Fleet assignment response:`, data);
+  if (!data.success) throw new Error(data.error || `Fleet assignment failed: ${res.status}`);
+  console.log(`[Enroll] ${deviceUID} assigned to GS fleet ✅`);
 }
 
 async function enrollAddToDatabase(deviceUID) {
