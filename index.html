@@ -5178,37 +5178,6 @@ async function enrollStartCamera() {
   }
 }
 
-  try {
-    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-    video.srcObject = enrollStream;
-    wrap.style.display = "block";
-    camBtn.textContent = "📷 Camera Active — point at QR code";
-    camBtn.onclick = enrollStopCamera;
-
-    const canvas = document.getElementById("enroll-canvas");
-    const ctx    = canvas.getContext("2d");
-    const status = document.getElementById("enroll-scan-status");
-
-    enrollScanInterval = setInterval(() => {
-      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
-      canvas.width  = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
-      if (code?.data) {
-        enrollStopCamera();
-        if (status) status.textContent = "✅ QR detected!";
-        enrollConfirmUID(code.data);
-      }
-    }, 250);
-
-  } catch(e) {
-    showEl(errEl, "Camera access denied. Please enter the ID manually below.");
-    camBtn.textContent = "📷 Open Camera";
-  }
-}
-
 function enrollStopCamera() {
   if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
   if (enrollScanInterval) { clearInterval(enrollScanInterval); enrollScanInterval = null; }
