@@ -5472,6 +5472,12 @@ async function enrollClaimToNotehub(deviceUID) {
 }
 
 async function enrollAddToDatabase(deviceUID) {
+  // Derive friendly values matching existing device format
+  // e.g. dev:860322060775795 → device_id: "device7795", name: "Unit 7795"
+  const lastFour  = deviceUID.slice(-4);
+  const deviceId  = `device${lastFour}`;
+  const unitName  = `Unit ${lastFour}`;
+
   const res = await fetch(`${SUPABASE_URL}/rest/v1/devices?on_conflict=uid`, {
     method: "POST",
     headers: {
@@ -5481,9 +5487,9 @@ async function enrollAddToDatabase(deviceUID) {
       "Prefer": "resolution=ignore-duplicates,return=minimal"
     },
     body: JSON.stringify({
-      device_id: deviceUID,
+      device_id: deviceId,
       uid:       deviceUID,
-      name:      deviceUID,
+      name:      unitName,
       enabled:   true
     })
   });
@@ -5517,6 +5523,7 @@ async function enrollPollForRelay(deviceUID, wantR1, wantR2, afterId) {
       try {
         let url = `${SUPABASE_URL}/rest/v1/device_readings?device_uid=eq.${encodeURIComponent(deviceUID)}&order=id.desc&limit=3`;
         if (afterId) url += `&id=gt.${afterId}`;
+        console.log(`[Enroll poll] querying:`, url);
         const res  = await fetch(url, { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } });
         const rows = await res.json();
         console.log(`[Enroll poll] afterId=${afterId} rows=`, rows?.length, rows?.[0]);
