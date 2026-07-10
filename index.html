@@ -1338,6 +1338,21 @@
           </div>
         </div>
 
+        <!-- Device connect countdown (shown after dashboard add, before relay test) -->
+        <div id="enroll-connect-wrap" style="display:none;background:var(--surface2);border-radius:var(--radius-sm);padding:14px;margin-bottom:12px;text-align:center;">
+          <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:6px;">⏳ Waiting for device to connect to network…</div>
+          <div style="font-size:11px;color:var(--text-hint);margin-bottom:10px;">The device needs a moment to check in with Notehub before it can receive commands.</div>
+          <div style="height:6px;background:var(--border-md);border-radius:3px;overflow:hidden;margin-bottom:8px;">
+            <div id="enroll-connect-bar" style="height:100%;background:var(--blue-dark);border-radius:3px;width:100%;transition:width 1s linear;"></div>
+          </div>
+          <div id="enroll-connect-label" style="font-size:13px;font-weight:700;font-family:monospace;color:var(--text-primary);margin-bottom:12px;">30</div>
+          <button id="enroll-start-test-btn" onclick="enrollBeginRelayTest()" disabled
+            style="width:100%;padding:12px;border-radius:var(--radius-sm);border:none;background:var(--border-md);color:var(--text-hint);font-size:14px;font-weight:700;cursor:not-allowed;transition:all .3s;">
+            Start Relay Test
+          </button>
+          <div style="font-size:10px;color:var(--text-hint);margin-top:6px;">Button activates when countdown reaches 0 — or tap early if device is already connected</div>
+        </div>
+
         <!-- Timeout countdown -->
         <div id="enroll-timeout-wrap" style="display:none;text-align:center;margin-bottom:12px;">
           <div style="font-size:11px;color:var(--text-hint);margin-bottom:4px;">Waiting for device response</div>
@@ -5223,6 +5238,56 @@ function enrollStopCamera() {
   if (camBtn) { camBtn.textContent = "📷 Open Camera"; camBtn.onclick = enrollStartCamera; }
 }
 
+// ── Device Connect Countdown ──────────────────────────────────────────────────
+// Shows a 30-second countdown then enables the Start Relay Test button.
+// Returns a Promise that resolves when the button is pressed (or countdown hits 0).
+let _enrollRelayTestResolve = null;
+
+function enrollDeviceConnectCountdown(seconds) {
+  return new Promise(resolve => {
+    _enrollRelayTestResolve = resolve;
+
+    const wrap    = document.getElementById("enroll-connect-wrap");
+    const bar     = document.getElementById("enroll-connect-bar");
+    const label   = document.getElementById("enroll-connect-label");
+    const btn     = document.getElementById("enroll-start-test-btn");
+
+    if (wrap) wrap.style.display = "block";
+    if (bar)  bar.style.width = "100%";
+    if (label) label.textContent = seconds;
+    if (btn) { btn.disabled = true; btn.style.background = "var(--border-md)"; btn.style.color = "var(--text-hint)"; btn.style.cursor = "not-allowed"; }
+
+    let remaining = seconds;
+    const timer = setInterval(() => {
+      remaining--;
+      const pct = (remaining / seconds) * 100;
+      if (bar)   bar.style.width = pct + "%";
+      if (label) label.textContent = remaining > 0 ? remaining : "Ready!";
+
+      if (remaining <= 0) {
+        clearInterval(timer);
+        // Enable the button
+        if (btn) {
+          btn.disabled = false;
+          btn.style.background = "var(--text-primary)";
+          btn.style.color = "white";
+          btn.style.cursor = "pointer";
+          btn.textContent = "▶ Start Relay Test";
+        }
+      }
+    }, 1000);
+  });
+}
+
+function enrollBeginRelayTest() {
+  const wrap = document.getElementById("enroll-connect-wrap");
+  if (wrap) wrap.style.display = "none";
+  if (_enrollRelayTestResolve) {
+    _enrollRelayTestResolve();
+    _enrollRelayTestResolve = null;
+  }
+}
+
 function enrollNormalizeManual(input) {
   // Strip "dev:" prefix as user types to keep field clean; we re-add it on submit
   input.value = input.value.replace(/^dev:\s*/i, "");
@@ -5293,7 +5358,7 @@ async function enrollStartProcess() {
     return enrollFinish(false, `Device registered but could not add to dashboard: ${e.message}`, installerName, customerName, customerAddress, "db_failed");
   }
 
-  // ── 3. Write enrollment log row ───────────────────────────────────────────
+  // ── 2.5. Write enrollment log row ────────────────────────────────────────
   enrollLogId = await enrollWriteLog({
     device_uid:       enrollDeviceUID,
     enrolled_at:      new Date().toISOString(),
@@ -5305,6 +5370,10 @@ async function enrollStartProcess() {
     db_added:         true,
     test_result:      "pending"
   });
+
+  // ── 2.5. Device connect countdown (30 sec) then wait for button ──────────
+  document.getElementById("enroll-progress-sub").textContent = "Waiting for device to connect…";
+  await enrollDeviceConnectCountdown(30);
 
   // ── 3. Send test command R1+R2 ON ─────────────────────────────────────────
   enrollSetCheck(3, "active");
@@ -5590,10 +5659,13 @@ function enrollReset() {
   enrollLogId       = null;
   enrollPhase       = null;
   enrollOnReadingId = null;
+  _enrollRelayTestResolve = null;
   document.getElementById("enroll-manual-uid").value  = "";
   document.getElementById("enroll-installer-name").value  = "";
   document.getElementById("enroll-customer-name").value   = "";
   document.getElementById("enroll-customer-address").value = "";
+  const connectWrap = document.getElementById("enroll-connect-wrap");
+  if (connectWrap) connectWrap.style.display = "none";
   enrollShowStep(1);
 }
 
