@@ -319,8 +319,7 @@
     #map { height: 320px; }
   }
 </style>
-  <!-- jsQR: loaded at startup for installer QR scanning -->
-  <script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script></head>
+</head>
 <body>
 
 <!-- ── STICKY HEADER ── -->
@@ -328,7 +327,7 @@
 <div id="login-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;">
   <div style="width:100%;max-width:420px;padding:1rem;">
     <div style="text-align:center;margin-bottom:2rem;">
-      <div style="font-size:22px;font-weight:700;color:var(--text-primary);">Generator Superstore — Device Portal</div>
+      <div style="font-size:22px;font-weight:700;color:var(--text-primary);">Load Control Device Panel</div>
       <div style="font-size:13px;color:var(--text-hint);margin-top:4px;">Sign in to continue</div>
     </div>
     <div class="sched-card" style="padding:1.5rem;">
@@ -439,8 +438,8 @@
 
 <div class="sticky-header">
   <div class="page-header">
-    <div class="page-title">Generator Superstore — Device Management</div>
-    <div class="page-sub">GS Fleet Enrollment &amp; Control</div>
+    <div class="page-title">Green Mountain Power — Load Control Panel</div>
+    <div class="page-sub">GMP Load Control &amp; Demand Response</div>
   </div>
   <!-- 7-day weather strip -->
   <div id="header-wx-strip" style="display:none;">
@@ -1314,7 +1313,7 @@
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
           <div class="enroll-check-row" id="enroll-chk-1">
             <span class="enroll-chk-icon">⏳</span>
-            <span class="enroll-chk-label">Registering device in fleet</span>
+            <span class="enroll-chk-label">Registering device in Honeywell GS fleet</span>
           </div>
           <div class="enroll-check-row" id="enroll-chk-2">
             <span class="enroll-chk-icon">⏸</span>
@@ -1548,13 +1547,17 @@
 </div>
 
 <script>
-const PROXY_URL    = "https://gs-relay.hurd71185.workers.dev/";
+const PROXY_URL    = "https://gmp-relay.hurd71185.workers.dev/";
 const SUPABASE_URL = "https://jariiblgefswzwuimhqr.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImphcmlpYmxnZWZzd3p3dWltaHFyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA2NzEzNzMsImV4cCI6MjA5NjI0NzM3M30.nQ_p3jBp1YfAsC7rqIhn7PYq8yH1mmV8scD5IuvvTeA";
 
 function unitName(uid) { return "Unit " + uid.slice(-4); }
 
-let DEVICES = [];  // Populated from Supabase devices table on login
+const DEVICES = [
+  { id: "device0", uid: "dev:868032061450817" },
+  { id: "device1", uid: "dev:868032061489682" },
+  { id: "device2", uid: "dev:868032061596023" },
+].map(d => ({ ...d, name: unitName(d.uid) }));
 
 const COMMANDS = {
   "1_on":   {"body":{"LC":"A10B000001810001000000002B"},"req":"note.add","sync":true},
@@ -1570,7 +1573,7 @@ const COMMANDS = {
 };
 
 const relayState = {};
-// relayState populated dynamically in loadDevicesFromDB after login
+DEVICES.forEach(d => { relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false }; });
 let busy = false;
 let map, mapInitialized = false;
 const mapMarkers = {};
@@ -4360,7 +4363,7 @@ function showBubbleStatus(msg, type) {
 }
 
 // ── WEATHER FORECAST ─────────────────────────────────────────────────────────
-const WEATHER_LOC_KEY = "wx_location_gs_v1";
+const WEATHER_LOC_KEY = "wx_location_gmp_v1";
 let wxLocationData = null;  // { name, lat, lon }
 let wxForecastData = null;  // NWS forecast data
 let wxSelectedDay  = null;  // index of selected day
@@ -4712,39 +4715,9 @@ async function onSignedIn(session) {
     .update({ last_login: new Date().toISOString() })
     .eq("id", currentUser.id);
 
-  // Load devices from Supabase into DEVICES array
-  await loadDevicesFromDB();
-
-  // Build device UI
-  buildControls();
-  buildDataCards();
-
   hideLoginOverlay();
   applyRolePermissions(currentUserRole);
   updateAdminHeader();
-}
-
-async function loadDevicesFromDB() {
-  try {
-    const rows = await supabaseGet("devices?enabled=eq.true&order=created_at.asc");
-    console.log("[GS] devices query returned:", rows);
-    if (!Array.isArray(rows) || !rows.length) {
-      console.warn("[GS] No devices found in Supabase");
-      return;
-    }
-    DEVICES = rows.map((d, i) => ({
-      id:   `device${i}`,
-      uid:  d.uid,
-      name: d.name || unitName(d.uid)
-    }));
-    // Reset relay state for loaded devices
-    DEVICES.forEach(d => {
-      relayState[d.id] = { 1:false, 2:false, 3:false, 4:false, all:false };
-    });
-    console.log(`[GS] Loaded ${DEVICES.length} device(s):`, DEVICES.map(d => d.uid));
-  } catch(e) {
-    console.error("[GS] loadDevicesFromDB failed:", e.message);
-  }
 }
 
 function showLoginOverlay() {
@@ -5146,30 +5119,15 @@ async function enrollStartCamera() {
   const errEl  = document.getElementById("enroll-step1-error");
   hideEl(errEl);
 
-  // Try loading jsQR if not already available (fallback if head script failed)
+  // Load jsQR dynamically (CDN, no install)
   if (!window.jsQR) {
     camBtn.textContent = "Loading scanner…";
-    const cdns = [
-      "https://unpkg.com/jsqr@1.4.0/dist/jsQR.js",
-      "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"
-    ];
-    for (const src of cdns) {
-      try {
-        await new Promise((resolve, reject) => {
-          const s = document.createElement("script");
-          s.src = src; s.onload = resolve; s.onerror = reject;
-          document.head.appendChild(s);
-        });
-        if (window.jsQR) break;
-      } catch(e) { continue; }
-    }
-    camBtn.textContent = "📷 Open Camera";
-  }
-
-  if (!window.jsQR) {
-    showEl(errEl, "QR scanner failed to load. Please enter the device ID manually below.");
-    return;
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    }).catch(() => { showEl(errEl, "Could not load QR scanner. Please enter the ID manually."); camBtn.textContent="📷 Open Camera"; return; });
   }
 
   try {
@@ -5200,20 +5158,9 @@ async function enrollStartCamera() {
   } catch(e) {
     showEl(errEl, "Camera access denied. Please enter the ID manually below.");
     camBtn.textContent = "📷 Open Camera";
-    camBtn.onclick = enrollStartCamera;
   }
 }
 
-function enrollStopCamera() {
-  if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
-  if (enrollScanInterval) { clearInterval(enrollScanInterval); enrollScanInterval = null; }
-  const wrap   = document.getElementById("enroll-camera-wrap");
-  const camBtn = document.getElementById("enroll-camera-btn");
-  if (wrap) wrap.style.display = "none";
-  if (camBtn) { camBtn.textContent = "📷 Open Camera"; camBtn.onclick = enrollStartCamera; }
-}
-
-// Handle image selected from file input (iOS native camera or gallery)
 function enrollStopCamera() {
   if (enrollStream) { enrollStream.getTracks().forEach(t => t.stop()); enrollStream = null; }
   if (enrollScanInterval) { clearInterval(enrollScanInterval); enrollScanInterval = null; }
@@ -5233,17 +5180,8 @@ function enrollConfirmUID(raw) {
   hideEl(errEl);
   enrollStopCamera();
 
-  let normalized = raw.trim();
-
-  // Handle qrgo.org URL format: http://qrgo.org/id/868032061463182/XXXXXX
-  const qrgoMatch = normalized.match(/qrgo\.org\/id\/(\d{15})/i);
-  if (qrgoMatch) {
-    normalized = qrgoMatch[1];
-  } else {
-    // Strip "dev:" prefix if present, remove whitespace
-    normalized = normalized.replace(/^dev:\s*/i, "").replace(/\s/g, "");
-  }
-
+  // Normalize: strip "dev:" prefix, trim whitespace/colons
+  const normalized = raw.trim().replace(/^dev:\s*/i, "").replace(/\s/g, "");
   // Validate: should be 15 digits (IMEI format)
   if (!/^\d{15}$/.test(normalized)) {
     showEl(errEl, `Invalid device ID: "${normalized}". Expected 15 digits (e.g. 868032061463182).`);
@@ -5378,27 +5316,43 @@ async function enrollStartProcess() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function enrollClaimToNotehub(deviceUID) {
-  // Use existing Notehub API token to add device to the project
-  // The device is already provisioned — this just associates it with the fleet
-  const PROJECT_UID  = "app:45e8c741-8358-4e04-b03a-b5f39135702a"; // GS project
+  const PROJECT_UID   = "app:45e8c741-8358-4e04-b03a-b5f39135702a";
+  const FLEET_UID     = "fleet:31fca5e2-9529-4aa0-9051-54777a47241d"; // Honeywell Generator Superstore
   const NOTEHUB_TOKEN = "api_key_Nu7pNGIt7OZaqtsjgqBqKkxD9W89esFQvPYovDJDOfw=";
-  const res = await fetch(`https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`, {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` }
-  });
-  // 200 = already in project (fine), 404 = not yet claimed
-  if (res.status === 404) {
-    // Device not yet in project — Notehub auto-claims on first note,
-    // but we can verify via the fleet endpoint
-    // For now treat 404 as "not yet seen" — it will auto-claim on first bubble-up
-    console.log(`[Enroll] Device ${deviceUID} not yet seen in Notehub — will auto-claim on first check-in`);
-    return;
+
+  // Step 1 — check if device is already in the project
+  const checkRes = await fetch(
+    `https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`,
+    { headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` } }
+  );
+
+  if (!checkRes.ok && checkRes.status !== 404) {
+    throw new Error(`Notehub device check failed: ${checkRes.status}`);
   }
-  if (!res.ok && res.status !== 404) throw new Error(`Notehub API: ${res.status}`);
+
+  // Step 2 — assign device to the GS fleet
+  const fleetRes = await fetch(
+    `https://api.notefile.net/v1/projects/${PROJECT_UID}/fleets/${FLEET_UID}/devices`,
+    {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${NOTEHUB_TOKEN}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ device_uids: [deviceUID] })
+    }
+  );
+
+  if (!fleetRes.ok) {
+    const err = await fleetRes.text();
+    // 409 = already in fleet, that's fine
+    if (fleetRes.status !== 409) throw new Error(`Notehub fleet assignment failed: ${err}`);
+  }
+
+  console.log(`[Enroll] ${deviceUID} assigned to fleet ${FLEET_UID}`);
 }
 
 async function enrollAddToDatabase(deviceUID) {
-  // Upsert into devices table — won't overwrite existing data
   const res = await fetch(`${SUPABASE_URL}/rest/v1/devices?on_conflict=uid`, {
     method: "POST",
     headers: {
@@ -5408,16 +5362,20 @@ async function enrollAddToDatabase(deviceUID) {
       "Prefer": "resolution=ignore-duplicates,return=minimal"
     },
     body: JSON.stringify({
-      uid:        deviceUID,
-      name:       deviceUID,   // admin can rename later
-      enabled:    true,
-      enrolled_at: new Date().toISOString()
+      device_id:   deviceUID,
+      uid:         deviceUID,
+      name:        deviceUID,
+      enabled:     true
     })
   });
   if (!res.ok) {
     const err = await res.text();
     throw new Error(err);
   }
+  // Refresh the live DEVICES array and rebuild the dashboard grid
+  await loadDevicesFromDB();
+  buildControls();
+  buildDataCards();
 }
 
 async function enrollSendCommand(deviceUID, lcHex) {
@@ -5525,23 +5483,39 @@ function enrollFinish(success, msg, installerName, customerName, customerAddress
     completed_at: new Date().toISOString()
   });
 
-  const icon    = document.getElementById("enroll-result-icon");
-  const title   = document.getElementById("enroll-result-title");
-  const msgEl   = document.getElementById("enroll-result-msg");
-  const detail  = document.getElementById("enroll-result-detail");
+  const icon      = document.getElementById("enroll-result-icon");
+  const title     = document.getElementById("enroll-result-title");
+  const msgEl     = document.getElementById("enroll-result-msg");
+  const detail    = document.getElementById("enroll-result-detail");
   const retryWrap = document.getElementById("enroll-retry-wrap");
 
-  if (icon)  icon.textContent  = success ? "✅" : result === "timeout" || result === "restore_timeout" ? "⚠️" : "❌";
-  if (title) title.textContent = success ? "Enrollment Complete!" : result.includes("timeout") ? "Registration Complete — Comms Unconfirmed" : "Enrollment Issue";
+  // Determine icon and title based on result
+  const isFullSuccess   = result === "success";
+  const isPartialSuccess = (result === "timeout" || result === "restore_timeout");
+  const isFailure       = !isFullSuccess && !isPartialSuccess;
+
+  if (icon)  icon.textContent  = isFullSuccess ? "✅" : isPartialSuccess ? "⚠️" : "❌";
+  if (title) title.textContent = isFullSuccess
+    ? "Enrollment Complete!"
+    : isPartialSuccess
+      ? "Comms Unconfirmed — Device Registered"
+      : result === "notehub_failed"
+        ? "Fleet Assignment Failed"
+        : result === "db_failed"
+          ? "Dashboard Registration Failed"
+          : "Enrollment Issue";
+
   if (msgEl) msgEl.textContent = msg;
+
   if (detail) detail.innerHTML =
     `Device UID:&nbsp;&nbsp;&nbsp;&nbsp;${enrollDeviceUID}<br>` +
-    `Installer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${installerName}<br>` +
+    `Installer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${installerName || currentInstaller?.name || "—"}<br>` +
     `Customer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerName || "—"}<br>` +
     `Address:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerAddress || "—"}<br>` +
     `Timestamp:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${new Date().toLocaleString()}<br>` +
-    `Test Result:&nbsp;&nbsp;&nbsp;${result}`;
-  if (retryWrap) retryWrap.style.display = success ? "none" : "block";
+    `Result:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${result}`;
+
+  if (retryWrap) retryWrap.style.display = isFullSuccess ? "none" : "block";
 
   enrollShowStep(5);
 }
