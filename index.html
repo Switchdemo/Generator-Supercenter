@@ -5377,6 +5377,18 @@ async function enrollStartProcess() {
 
   // ── 3. Send test command R1+R2 ON ─────────────────────────────────────────
   enrollSetCheck(3, "active");
+
+  // Capture the latest reading ID BEFORE sending command so poll only
+  // looks at readings that arrive AFTER the command is sent
+  let preCommandId = null;
+  try {
+    const preRes  = await fetch(`${SUPABASE_URL}/rest/v1/device_readings?device_uid=eq.${encodeURIComponent(enrollDeviceUID)}&order=id.desc&limit=1`,
+      { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } });
+    const preRows = await preRes.json();
+    if (Array.isArray(preRows) && preRows.length > 0) preCommandId = preRows[0].id;
+    console.log(`[Enroll] Pre-command reading ID: ${preCommandId}`);
+  } catch(e) { console.warn("[Enroll] Could not get pre-command ID:", e.message); }
+
   const onHex = buildLCHex("relay_r1r2_on", "dlc", 1, 1, 0);
   try {
     await enrollSendCommand(enrollDeviceUID, onHex);
@@ -5396,7 +5408,7 @@ async function enrollStartProcess() {
     enrollFinish(false, "Device did not respond within the timeout window. The device is registered and the command was sent — it may confirm when it next connects to the network.", installerName, customerName, customerAddress, "timeout");
   });
 
-  const onConfirmed = await enrollPollForRelay(enrollDeviceUID, true, true);
+  const onConfirmed = await enrollPollForRelay(enrollDeviceUID, true, true, preCommandId);
   if (!onConfirmed) return; // timeout already handled
 
   enrollSetCheck(4, "done", "Relay confirmation received ✅");
@@ -5507,17 +5519,19 @@ async function enrollPollForRelay(deviceUID, wantR1, wantR2, afterId) {
         if (afterId) url += `&id=gt.${afterId}`;
         const res  = await fetch(url, { headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` } });
         const rows = await res.json();
+        console.log(`[Enroll poll] afterId=${afterId} rows=`, rows?.length, rows?.[0]);
         if (Array.isArray(rows) && rows.length > 0) {
           const r = rows[0];
           const r1ok = wantR1 ? r.relay_status_r1 > 0 : r.relay_status_r1 === 0;
           const r2ok = wantR2 ? r.relay_status_r2 > 0 : r.relay_status_r2 === 0;
+          console.log(`[Enroll poll] r1=${r.relay_status_r1} r2=${r.relay_status_r2} r1ok=${r1ok} r2ok=${r2ok}`);
           if (r1ok && r2ok) {
             clearInterval(enrollPollTimer);
             resolve(r);
           }
         }
       } catch(e) { console.warn("[Enroll poll]", e.message); }
-    }, 10000);
+    }, 5000);
   });
 }
 
