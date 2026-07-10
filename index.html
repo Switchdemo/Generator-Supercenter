@@ -1314,7 +1314,7 @@
         <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
           <div class="enroll-check-row" id="enroll-chk-1">
             <span class="enroll-chk-icon">⏳</span>
-            <span class="enroll-chk-label">Registering device in fleet</span>
+            <span class="enroll-chk-label">Registering device in Honeywell GS fleet</span>
           </div>
           <div class="enroll-check-row" id="enroll-chk-2">
             <span class="enroll-chk-icon">⏸</span>
@@ -5378,27 +5378,36 @@ async function enrollStartProcess() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function enrollClaimToNotehub(deviceUID) {
-  // Use existing Notehub API token to add device to the project
-  // The device is already provisioned — this just associates it with the fleet
-  const PROJECT_UID  = "app:45e8c741-8358-4e04-b03a-b5f39135702a"; // GS project
+  const PROJECT_UID   = "app:45e8c741-8358-4e04-b03a-b5f39135702a";
+  const FLEET_UID     = "fleet:31fca5e2-9529-4aa0-9051-54777a47241d"; // Honeywell Generator Superstore
   const NOTEHUB_TOKEN = "api_key_Nu7pNGIt7OZaqtsjgqBqKkxD9W89esFQvPYovDJDOfw=";
-  const res = await fetch(`https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`, {
-    method: "GET",
-    headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` }
-  });
-  // 200 = already in project (fine), 404 = not yet claimed
-  if (res.status === 404) {
-    // Device not yet in project — Notehub auto-claims on first note,
-    // but we can verify via the fleet endpoint
-    // For now treat 404 as "not yet seen" — it will auto-claim on first bubble-up
-    console.log(`[Enroll] Device ${deviceUID} not yet seen in Notehub — will auto-claim on first check-in`);
-    return;
+
+  // Check if device exists in project (404 = not yet seen, that's fine)
+  const checkRes = await fetch(
+    `https://api.notefile.net/v1/projects/${PROJECT_UID}/devices/${encodeURIComponent(deviceUID)}`,
+    { headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}` } }
+  );
+  if (!checkRes.ok && checkRes.status !== 404) {
+    throw new Error(`Notehub device check failed: ${checkRes.status}`);
   }
-  if (!res.ok && res.status !== 404) throw new Error(`Notehub API: ${res.status}`);
+
+  // Assign device to the Honeywell Generator Superstore fleet
+  const fleetRes = await fetch(
+    `https://api.notefile.net/v1/projects/${PROJECT_UID}/fleets/${FLEET_UID}/devices`,
+    {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${NOTEHUB_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ device_uids: [deviceUID] })
+    }
+  );
+  if (!fleetRes.ok && fleetRes.status !== 409) {
+    const err = await fleetRes.text();
+    throw new Error(`Notehub fleet assignment failed: ${err}`);
+  }
+  console.log(`[Enroll] ${deviceUID} assigned to GS fleet`);
 }
 
 async function enrollAddToDatabase(deviceUID) {
-  // Upsert into devices table — won't overwrite existing data
   const res = await fetch(`${SUPABASE_URL}/rest/v1/devices?on_conflict=uid`, {
     method: "POST",
     headers: {
@@ -5408,16 +5417,20 @@ async function enrollAddToDatabase(deviceUID) {
       "Prefer": "resolution=ignore-duplicates,return=minimal"
     },
     body: JSON.stringify({
-      uid:        deviceUID,
-      name:       deviceUID,   // admin can rename later
-      enabled:    true,
-      enrolled_at: new Date().toISOString()
+      device_id: deviceUID,
+      uid:       deviceUID,
+      name:      deviceUID,
+      enabled:   true
     })
   });
   if (!res.ok) {
     const err = await res.text();
     throw new Error(err);
   }
+  // Refresh DEVICES array and rebuild dashboard grid immediately
+  await loadDevicesFromDB();
+  buildControls();
+  buildDataCards();
 }
 
 async function enrollSendCommand(deviceUID, lcHex) {
@@ -5532,15 +5545,20 @@ function enrollFinish(success, msg, installerName, customerName, customerAddress
   const retryWrap = document.getElementById("enroll-retry-wrap");
 
   if (icon)  icon.textContent  = success ? "✅" : result === "timeout" || result === "restore_timeout" ? "⚠️" : "❌";
-  if (title) title.textContent = success ? "Enrollment Complete!" : result.includes("timeout") ? "Registration Complete — Comms Unconfirmed" : "Enrollment Issue";
+  if (title) title.textContent = success
+    ? "Enrollment Complete!"
+    : result === "notehub_failed"   ? "Fleet Assignment Failed"
+    : result === "db_failed"        ? "Dashboard Registration Failed"
+    : result.includes("timeout")    ? "Comms Unconfirmed — Device Registered"
+    : "Enrollment Issue";
   if (msgEl) msgEl.textContent = msg;
   if (detail) detail.innerHTML =
     `Device UID:&nbsp;&nbsp;&nbsp;&nbsp;${enrollDeviceUID}<br>` +
-    `Installer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${installerName}<br>` +
+    `Installer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${currentInstaller?.name || installerName || "—"}<br>` +
     `Customer:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerName || "—"}<br>` +
     `Address:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${customerAddress || "—"}<br>` +
     `Timestamp:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${new Date().toLocaleString()}<br>` +
-    `Test Result:&nbsp;&nbsp;&nbsp;${result}`;
+    `Result:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${result}`;
   if (retryWrap) retryWrap.style.display = success ? "none" : "block";
 
   enrollShowStep(5);
