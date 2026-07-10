@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
@@ -5119,16 +5120,63 @@ async function enrollStartCamera() {
   const errEl  = document.getElementById("enroll-step1-error");
   hideEl(errEl);
 
-  // Load jsQR dynamically (CDN, no install)
+  // Try loading jsQR from multiple CDNs if not already loaded
   if (!window.jsQR) {
     camBtn.textContent = "Loading scanner…";
-    await new Promise((resolve, reject) => {
-      const s = document.createElement("script");
-      s.src = "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js";
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    }).catch(() => { showEl(errEl, "Could not load QR scanner. Please enter the ID manually."); camBtn.textContent="📷 Open Camera"; return; });
+    const cdns = [
+      "https://unpkg.com/jsqr@1.4.0/dist/jsQR.js",
+      "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js",
+      "https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"
+    ];
+    for (const src of cdns) {
+      try {
+        await new Promise((resolve, reject) => {
+          const s = document.createElement("script");
+          s.src = src; s.onload = resolve; s.onerror = reject;
+          document.head.appendChild(s);
+        });
+        if (window.jsQR) break;
+      } catch(e) { continue; }
+    }
+    camBtn.textContent = "📷 Open Camera";
   }
+
+  if (!window.jsQR) {
+    showEl(errEl, "QR scanner failed to load. Please enter the device ID manually below.");
+    return;
+  }
+
+  try {
+    enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    video.srcObject = enrollStream;
+    wrap.style.display = "block";
+    camBtn.textContent = "📷 Camera Active — point at QR code";
+    camBtn.onclick = enrollStopCamera;
+
+    const canvas = document.getElementById("enroll-canvas");
+    const ctx    = canvas.getContext("2d");
+    const status = document.getElementById("enroll-scan-status");
+
+    enrollScanInterval = setInterval(() => {
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      canvas.width  = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const img  = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const code = window.jsQR(img.data, img.width, img.height, { inversionAttempts: "dontInvert" });
+      if (code?.data) {
+        enrollStopCamera();
+        if (status) status.textContent = "✅ QR detected!";
+        enrollConfirmUID(code.data);
+      }
+    }, 250);
+
+  } catch(e) {
+    showEl(errEl, "Camera access denied. Please enter the ID manually below.");
+    camBtn.textContent = "📷 Open Camera";
+    camBtn.onclick = enrollStartCamera;
+  }
+}
 
   try {
     enrollStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
